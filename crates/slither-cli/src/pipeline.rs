@@ -34,10 +34,17 @@ pub async fn crawl(config: SlitherConfig, urls: Vec<String>) -> SlitherResult<()
     let ctrl_c = tokio::signal::ctrl_c();
     tokio::pin!(ctrl_c);
 
+    let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+        .expect("failed to register SIGTERM handler");
+
     loop {
         tokio::select! {
             _ = &mut ctrl_c => {
-                println!("\nInterrupted — flushing index...");
+                println!("\nInterrupted (SIGINT) — flushing index...");
+                break;
+            }
+            _ = sigterm.recv() => {
+                println!("\nTerminated (SIGTERM) — flushing index...");
                 break;
             }
             msg = rx.recv() => {

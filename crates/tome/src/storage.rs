@@ -44,6 +44,31 @@ impl DocStoreWriter {
         }
     }
 
+    pub fn load_existing(path: PathBuf) -> Result<Self, SlitherError> {
+        let raw = std::fs::read(&path)?;
+        if raw.len() < 20 {
+            return Ok(Self::new(path));
+        }
+        if &raw[0..8] != MAGIC_DOC {
+            return Ok(Self::new(path));
+        }
+        let doc_count = u64::from_le_bytes(raw[12..20].try_into().unwrap()) as usize;
+        if doc_count == 0 {
+            return Ok(Self::new(path));
+        }
+        let entry_table_offset = 20;
+        let data_section_offset = entry_table_offset + doc_count * 12;
+        let mut offsets = Vec::with_capacity(doc_count);
+        for i in 0..doc_count {
+            let pos = entry_table_offset + i * 12;
+            let offset = u64::from_le_bytes(raw[pos..pos + 8].try_into().unwrap());
+            let len = u32::from_le_bytes(raw[pos + 8..pos + 12].try_into().unwrap());
+            offsets.push((offset, len));
+        }
+        let data = raw[data_section_offset..].to_vec();
+        Ok(Self { path, offsets, data })
+    }
+
     pub fn append(&mut self, doc: &StoredDoc) -> Result<u64, SlitherError> {
         let doc_id = self.offsets.len() as u64;
         let offset = self.data.len() as u64;
@@ -262,6 +287,29 @@ impl IndexReader {
         self.binary_search(hash)
             .map(|e| e.postings_len as u64)
             .unwrap_or(0)
+    }
+
+    pub fn iter_all(&self) -> Vec<(u64, Vec<Posting>)> {
+        let mut result = Vec::with_capacity(self.term_count as usize);
+        for i in 0..self.term_count as usize {
+            let pos = self.dict_offset + i * 20;
+            let hash = u64::from_le_bytes(self.mmap[pos..pos + 8].try_into().unwrap());
+            let postings_offset =
+                u64::from_le_bytes(self.mmap[pos + 8..pos + 16].try_into().unwrap()) as usize;
+            let postings_len =
+                u32::from_le_bytes(self.mmap[pos + 16..pos + 20].try_into().unwrap()) as usize;
+
+            let base = self.postings_section_offset + postings_offset;
+            let mut postings = Vec::with_capacity(postings_len);
+            for j in 0..postings_len {
+                let p = base + j * 12;
+                let doc_id = u64::from_le_bytes(self.mmap[p..p + 8].try_into().unwrap());
+                let term_freq = u32::from_le_bytes(self.mmap[p + 8..p + 12].try_into().unwrap());
+                postings.push(Posting { doc_id, term_freq });
+            }
+            result.push((hash, postings));
+        }
+        result
     }
 
     fn binary_search(&self, hash: u64) -> Option<TermEntry> {

@@ -58,6 +58,9 @@ impl Ranker {
     }
 
     pub fn index_document(&mut self, doc: &Document) -> SlitherResult<()> {
+        if self.index.is_indexed(doc.id) {
+            return Ok(());
+        }
         self.index.index_document(doc)?;
         let text = format!("{} {}", doc.title, doc.body);
         let embedding = self.embedder.embed_text(&text)?;

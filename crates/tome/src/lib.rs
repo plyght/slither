@@ -50,6 +50,7 @@ impl Index {
         let mut mem = InMemoryIndex::new();
         let mut doc_id_to_seq: HashMap<u64, u64> = HashMap::new();
         let mut seq_to_doc_id: Vec<u64> = Vec::new();
+        let doc_store_writer;
         let flushed;
 
         if meta_path.exists() && docs_path.exists() && index_path.exists() {
@@ -64,18 +65,25 @@ impl Index {
                 seq_to_doc_id.push(doc_id);
             }
 
-            flushed = true;
+            let index_reader = IndexReader::open(&index_path)?;
+            for (hash, postings) in index_reader.iter_all() {
+                mem.postings.insert(hash, postings);
+            }
+
+            doc_store_writer = DocStoreWriter::load_existing(docs_path)?;
+
+            flushed = false;
             info!(
                 doc_count = meta.doc_count,
-                "opened existing tome index at {}",
+                terms = mem.postings.len(),
+                "loaded existing tome index into memory at {}",
                 path.display()
             );
         } else {
+            doc_store_writer = DocStoreWriter::new(docs_path);
             flushed = false;
             info!("created new tome index at {}", path.display());
         }
-
-        let doc_store_writer = DocStoreWriter::new(docs_path);
 
         Ok(Self {
             dir: path.to_path_buf(),
@@ -85,6 +93,10 @@ impl Index {
             seq_to_doc_id,
             flushed,
         })
+    }
+
+    pub fn is_indexed(&self, doc_id: u64) -> bool {
+        self.doc_id_to_seq.contains_key(&doc_id)
     }
 
     pub fn index_document(&mut self, doc: &Document) -> SlitherResult<()> {
