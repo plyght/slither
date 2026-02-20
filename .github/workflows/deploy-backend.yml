@@ -50,11 +50,12 @@ jobs:
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           envs: DEPLOY_PASSWORD
           script: |
-            echo "$DEPLOY_PASSWORD" | sudo -S systemctl stop slither-serve
-            echo "$DEPLOY_PASSWORD" | sudo -S cp /tmp/slither /usr/local/bin/slither
-            echo "$DEPLOY_PASSWORD" | sudo -S chmod +x /usr/local/bin/slither
-            echo "$DEPLOY_PASSWORD" | sudo -S systemctl start slither-serve
+            echo "$DEPLOY_PASSWORD" | sudo -S cp /tmp/slither /usr/local/bin/slither.new
+            echo "$DEPLOY_PASSWORD" | sudo -S chmod +x /usr/local/bin/slither.new
+            echo "$DEPLOY_PASSWORD" | sudo -S mv /usr/local/bin/slither.new /usr/local/bin/slither
+            echo "$DEPLOY_PASSWORD" | sudo -S systemctl restart slither-serve
             sleep 2
             curl -sf http://localhost:8080/health || echo "Health check failed"
-        env:
-          DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
+            rm -f /tmp/slither
+          env:
+            DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
