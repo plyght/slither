@@ -52,6 +52,7 @@ impl Ranker {
                 Ok(fusion::reciprocal_rank_fusion(
                     &[text_results, semantic_results],
                     query.limit,
+                    &query.text,
                 ))
             }
         }
