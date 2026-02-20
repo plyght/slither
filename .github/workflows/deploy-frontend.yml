@@ -18,6 +18,7 @@ jobs:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           password: ${{ secrets.DEPLOY_PASSWORD }}
-          source: frontend/index.html
+          source: frontend/
           target: /home/nico/slither/
           strip_components: 0
+          overwrite: true

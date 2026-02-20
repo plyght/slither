@@ -92,7 +92,7 @@ Configuration is searched in: CLI path -> `slither.json` -> defaults.
 
 ## Production Deployment
 
-Currently running on a Hetzner Cloud server (CX22, 4GB RAM, Ubuntu 24.04) with Cloudflare R2 for durable backup.
+Currently running on a Hetzner Cloud server (CX22, 4GB RAM, Ubuntu 24.04) with Cloudflare R2 for durable backup. The search frontend is live at [search.peril.lol](https://search.peril.lol).
 
 ### Infrastructure
 
@@ -100,9 +100,13 @@ Currently running on a Hetzner Cloud server (CX22, 4GB RAM, Ubuntu 24.04) with C
 |-----------|---------|
 | **Server** | Hetzner CX22 (2 vCPU, 4GB RAM, 40GB disk) |
 | **Storage** | Local disk + Cloudflare R2 bucket (`slither`) |
-| **API** | `http://<server-ip>:8080` via systemd |
+| **Frontend** | `https://search.peril.lol` via Caddy |
+| **API** | `https://search.peril.lol/search` (proxied), `localhost:8080` internal |
 | **Crawl** | Automated every 2 hours via systemd timer |
 | **Backup** | `rclone sync` to R2 after each crawl cycle |
+| **DNS** | Cloudflare — A record `search` → server IP (DNS only, gray cloud) |
+| **TLS** | Let's Encrypt via Caddy auto-HTTPS |
+| **CI/CD** | GitHub Actions — auto-deploy `frontend/` on push to `master` |
 
 ### File Layout
 
@@ -111,10 +115,75 @@ Currently running on a Hetzner Cloud server (CX22, 4GB RAM, Ubuntu 24.04) with C
 /usr/local/bin/slither-crawl-loop   # Crawl automation script
 /home/nico/slither/slither.json     # Config
 /home/nico/slither/models/          # ONNX model files
+/home/nico/slither/frontend/        # Search frontend (served by Caddy)
+  index.html                        # Main page
+  css/styles.css                    # Styles
+  js/app.js                         # Client-side logic
 /mnt/r2-slither/                    # Index + vector data directory
   index/                            # BM25 index (docs.bin, index.bin, meta.json, terms.bin)
   vectors/                          # Semantic vectors (vectors.bin, vecmap.bin)
+/etc/caddy/Caddyfile                # Caddy reverse proxy + static file config
 ```
+
+### Frontend
+
+The search frontend at `search.peril.lol` is a static site served by Caddy. It talks to the slither API through Caddy's reverse proxy.
+
+**Features:**
+- Hybrid, text, and semantic search mode toggle
+- Live document count from `/stats`
+- oklch color scheme randomizer
+- Dark mode via `prefers-color-scheme`
+- Text scramble effect on title hover
+- Keyboard shortcuts (`/` to focus, `Esc` to go home)
+- Shareable URL query params (`?q=...&mode=...`)
+- Search term highlighting in snippets
+- plyght branding (logo mark, flag, wordmark)
+
+**Local development:**
+```bash
+# Serve the frontend locally (any static server works)
+cd frontend
+python3 -m http.server 8000
+# Open http://localhost:8000
+# API calls fall back to the production server when running locally
+```
+
+### Caddy
+
+Caddy handles TLS termination, static file serving, and reverse proxying API routes to the slither backend.
+
+**`/etc/caddy/Caddyfile`:**
+```
+search.peril.lol {
+    tls plyght@peril.lol
+
+    root * /home/nico/slither/frontend
+    encode gzip zstd
+
+    @api {
+        path /search /stats /health
+    }
+    reverse_proxy @api localhost:8080
+
+    file_server
+}
+```
+
+```bash
+sudo systemctl status caddy
+sudo systemctl reload caddy        # After Caddyfile changes
+sudo journalctl -u caddy -f        # Watch logs
+```
+
+### CI/CD
+
+The GitHub Actions workflow at `.github/workflows/deploy-frontend.yml` auto-deploys the `frontend/` directory to the server on every push to `master` that touches `frontend/**`.
+
+**Required GitHub secrets:**
+- `DEPLOY_HOST` — server IP
+- `DEPLOY_USER` — SSH username
+- `DEPLOY_PASSWORD` — SSH password
 
 ### systemd Services
 
@@ -129,6 +198,10 @@ systemctl status slither-crawl-job.timer
 journalctl -u slither-crawl-job.service -f  # watch crawl logs
 ```
 
+### DNS
+
+DNS is managed on Cloudflare. The `search` A record must be set to **DNS only** (gray cloud, not proxied) so Caddy can provision Let's Encrypt certificates via HTTP-01 challenge. If you enable CF proxy (orange cloud), Caddy can't complete the ACME challenge and TLS will break.
+
 ### Setup from Scratch
 
 ```bash
@@ -141,6 +214,14 @@ rclone config  # add r2 remote with Cloudflare S3-compatible credentials
 # Install systemd units and crawl script, then:
 sudo systemctl enable --now slither-serve
 sudo systemctl enable --now slither-crawl-job.timer
+
+# Install Caddy:
+sudo apt install -y caddy
+# Edit /etc/caddy/Caddyfile (see above)
+sudo systemctl enable --now caddy
+
+# Ensure Caddy can read the frontend files:
+chmod o+x /home/nico/
 ```
 
 ## Development
