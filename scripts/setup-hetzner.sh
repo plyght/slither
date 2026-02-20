@@ -21,11 +21,9 @@ sudo apt install -y build-essential pkg-config libssl-dev
 echo "Downloading ONNX model..."
 mkdir -p models
 cd models
-curl -L -o all-MiniLM-L6-v2.onnx "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/onnx/all-MiniLM-L6-v2.onnx" ||
-	curl -L -o all-MiniLM-L6-v2.onnx "https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/models/all-MiniLM-L6-v2/onnx/model_quantized.onnx"
+curl -L -o all-MiniLM-L6-v2.onnx "https://huggingface.co/onnx-community/all-MiniLM-L6-v2-ONNX/resolve/main/model.onnx"
 
-curl -L -o tokenizer.json "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/tokenizer.json" ||
-	curl -L -o tokenizer.json "https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/models/all-MiniLM-L6-v2/tokenizer.json"
+curl -L -o tokenizer.json "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/tokenizer.json"
 
 cd ..
 

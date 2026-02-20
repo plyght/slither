@@ -80,6 +80,8 @@ pub async fn crawl(config: SlitherConfig, urls: Vec<String>) -> SlitherResult<()
         }
     }
 
+    drop(rx);
+    crawl_handle.abort();
     let _ = crawl_handle.await;
     ranker.flush()?;
 

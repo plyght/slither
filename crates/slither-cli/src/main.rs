@@ -36,8 +36,8 @@ enum Commands {
         #[arg(long, default_value = "50", help = "Number of concurrent workers")]
         concurrent: usize,
 
-        #[arg(long, default_value = "./slither_data", help = "Output data directory")]
-        output_dir: String,
+        #[arg(long, help = "Output data directory (overrides config)")]
+        output_dir: Option<String>,
 
         #[arg(long, help = "Max storage in GB (e.g. 100)")]
         max_storage_gb: Option<f64>,
@@ -68,14 +68,14 @@ enum Commands {
         )]
         mode: CliSearchMode,
 
-        #[arg(long, default_value = "./slither_data", help = "Data directory")]
-        output_dir: String,
+        #[arg(long, help = "Data directory (overrides config)")]
+        output_dir: Option<String>,
     },
 
     #[command(about = "Show index statistics")]
     Stats {
-        #[arg(long, default_value = "./slither_data", help = "Data directory")]
-        output_dir: String,
+        #[arg(long, help = "Data directory (overrides config)")]
+        output_dir: Option<String>,
     },
 
     #[command(about = "Start HTTP API server")]
@@ -86,8 +86,8 @@ enum Commands {
         #[arg(long, default_value = "0.0.0.0", help = "Address to bind to")]
         host: String,
 
-        #[arg(long, default_value = "./slither_data", help = "Data directory")]
-        output_dir: String,
+        #[arg(long, help = "Data directory (overrides config)")]
+        output_dir: Option<String>,
     },
 
     #[command(about = "Manage configuration")]
@@ -136,9 +136,11 @@ async fn main() {
         } => {
             config.crawler.max_depth = depth;
             config.crawler.max_concurrent = concurrent;
-            config.data_dir = output_dir.clone();
-            config.index.data_dir = format!("{output_dir}/index");
-            config.embedder.data_dir = format!("{output_dir}/vectors");
+            if let Some(dir) = output_dir {
+                config.data_dir = dir.clone();
+                config.index.data_dir = format!("{dir}/index");
+                config.embedder.data_dir = format!("{dir}/vectors");
+            }
             config.storage.max_gb = max_storage_gb;
             config.storage.warning_threshold_gb = warning_threshold_gb;
             pipeline::crawl(config, urls).await
@@ -150,17 +152,21 @@ async fn main() {
             mode,
             output_dir,
         } => {
-            config.data_dir = output_dir.clone();
-            config.index.data_dir = format!("{output_dir}/index");
-            config.embedder.data_dir = format!("{output_dir}/vectors");
+            if let Some(dir) = output_dir {
+                config.data_dir = dir.clone();
+                config.index.data_dir = format!("{dir}/index");
+                config.embedder.data_dir = format!("{dir}/vectors");
+            }
             let sq = SearchQuery { text: query, limit };
             pipeline::search(config, sq, mode.into()).await
         }
 
         Commands::Stats { output_dir } => {
-            config.data_dir = output_dir.clone();
-            config.index.data_dir = format!("{output_dir}/index");
-            config.embedder.data_dir = format!("{output_dir}/vectors");
+            if let Some(dir) = output_dir {
+                config.data_dir = dir.clone();
+                config.index.data_dir = format!("{dir}/index");
+                config.embedder.data_dir = format!("{dir}/vectors");
+            }
             pipeline::stats(config).await
         }
 
@@ -169,9 +175,11 @@ async fn main() {
             host,
             output_dir,
         } => {
-            config.data_dir = output_dir.clone();
-            config.index.data_dir = format!("{output_dir}/index");
-            config.embedder.data_dir = format!("{output_dir}/vectors");
+            if let Some(dir) = output_dir {
+                config.data_dir = dir.clone();
+                config.index.data_dir = format!("{dir}/index");
+                config.embedder.data_dir = format!("{dir}/vectors");
+            }
             api::serve(config, &host, port).await
         }
 

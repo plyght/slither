@@ -83,7 +83,8 @@ pub fn extract_lang(document: &Html, body_text: &str) -> Option<String> {
     }
 
     let detect_text = if body_text.len() > 500 {
-        &body_text[..500]
+        let end = body_text.floor_char_boundary(500);
+        &body_text[..end]
     } else {
         body_text
     };
