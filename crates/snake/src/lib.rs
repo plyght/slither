@@ -19,11 +19,20 @@ use url::Url;
 
 pub struct Crawler {
     config: CrawlerConfig,
+    known_urls: Vec<u64>,
 }
 
 impl Crawler {
     pub fn new(config: CrawlerConfig) -> Self {
-        Self { config }
+        Self {
+            config,
+            known_urls: Vec::new(),
+        }
+    }
+
+    pub fn with_known_urls(mut self, urls: Vec<u64>) -> Self {
+        self.known_urls = urls;
+        self
     }
 
     pub async fn crawl(&self, seeds: Vec<String>, tx: Sender<RawPage>) -> Result<(), SlitherError> {
@@ -39,7 +48,11 @@ impl Crawler {
             config.user_agent.clone(),
         ));
         let rate_limiter = Arc::new(DomainRateLimiter::new(config.rate_limit_per_second)?);
-        let frontier = Arc::new(Frontier::new());
+        let frontier = if self.known_urls.is_empty() {
+            Arc::new(Frontier::new())
+        } else {
+            Arc::new(Frontier::with_known_urls(&self.known_urls))
+        };
 
         let mut valid_seeds = 0usize;
         for raw in &seeds {

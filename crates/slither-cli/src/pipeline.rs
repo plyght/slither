@@ -21,9 +21,10 @@ pub async fn crawl(config: SlitherConfig, urls: Vec<String>) -> SlitherResult<()
     let transformer = Fang::new(FangConfig::default());
     let index = Index::open(Path::new(&config.index.data_dir))?;
     let embedder = Iris::new(config.embedder.clone())?;
+    let known_ids = index.known_doc_ids();
     let mut ranker = Ranker::new(index, embedder);
 
-    let snake = Crawler::new(config.crawler.clone());
+    let snake = Crawler::new(config.crawler.clone()).with_known_urls(known_ids);
     let (tx, mut rx) = tokio::sync::mpsc::channel::<RawPage>(256);
 
     let crawl_handle = tokio::spawn(async move { snake.crawl(urls, tx).await });

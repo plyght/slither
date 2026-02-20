@@ -99,6 +99,10 @@ impl Index {
         self.doc_id_to_seq.contains_key(&doc_id)
     }
 
+    pub fn known_doc_ids(&self) -> Vec<u64> {
+        self.seq_to_doc_id.clone()
+    }
+
     pub fn index_document(&mut self, doc: &Document) -> SlitherResult<()> {
         if self.doc_id_to_seq.contains_key(&doc.id) {
             debug!(doc_id = doc.id, "skipping already-indexed document");

@@ -25,16 +25,31 @@ impl Frontier {
         }
     }
 
-    fn url_key(url: &str) -> u64 {
+    pub fn with_known_urls(known: &[u64]) -> Self {
+        let seen = DashMap::with_capacity(known.len());
+        for &hash in known {
+            seen.insert(hash, ());
+        }
+        tracing::info!(
+            "frontier pre-loaded {} known URLs — will skip already-indexed pages",
+            known.len()
+        );
+        Self {
+            global: Injector::new(),
+            seen,
+            pending: AtomicI64::new(0),
+        }
+    }
+
+    pub fn url_key(url: &str) -> u64 {
         xxh3_64(url.as_bytes())
     }
 
     pub fn seed(&self, url: String) {
         let key = Self::url_key(&url);
-        if self.seen.insert(key, ()).is_none() {
-            self.pending.fetch_add(1, Ordering::SeqCst);
-            self.global.push(CrawlTask { url, depth: 0 });
-        }
+        self.seen.insert(key, ());
+        self.pending.fetch_add(1, Ordering::SeqCst);
+        self.global.push(CrawlTask { url, depth: 0 });
     }
 
     pub fn try_push(&self, url: String, depth: usize, local: &Injector<CrawlTask>) -> bool {
@@ -54,6 +69,10 @@ impl Frontier {
 
     pub fn is_done(&self) -> bool {
         self.pending.load(Ordering::SeqCst) <= 0
+    }
+
+    pub fn seen_count(&self) -> usize {
+        self.seen.len()
     }
 }
 
