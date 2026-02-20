@@ -1,9 +1,4 @@
 <div align='center'>
-    <br/>
-    <br/>
-    <img src="https://github.com/user-attachments/assets/cc330a78-001a-42af-a778-ef4d69599407" alt="slither-logo" width="300"/>
-    <br/>
-    <br/>
     <h3>Slither</h3>
     <p>A fast, hybrid web search engine with text and semantic search capabilities</p>
     <br/>
