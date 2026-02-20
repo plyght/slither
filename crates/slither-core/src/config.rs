@@ -7,6 +7,8 @@ pub struct SlitherConfig {
     pub embedder: EmbedderConfig,
     pub storage: StorageConfig,
     pub data_dir: String,
+    #[serde(default)]
+    pub admin_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -56,6 +58,7 @@ impl Default for SlitherConfig {
             embedder: EmbedderConfig::default(),
             storage: StorageConfig::default(),
             data_dir: "slither_data".to_string(),
+            admin_key: None,
         }
     }
 }

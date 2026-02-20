@@ -1,12 +1,15 @@
 use axum::{
     extract::Query,
+    extract::Request,
     extract::State,
-    response::Json,
-    routing::get,
+    middleware::Next,
+    response::{IntoResponse, Json, Response},
+    routing::{get, post},
     Router,
 };
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
@@ -15,14 +18,16 @@ use venom::Ranker;
 use tome::Index;
 use iris::Iris;
 
+use crate::seeds;
+
 #[derive(Debug, Serialize)]
-pub struct ApiResponse<T> {
+pub struct ApiResponse<T: Serialize> {
     pub success: bool,
     pub data: Option<T>,
     pub error: Option<String>,
 }
 
-impl<T> ApiResponse<T> {
+impl<T: Serialize> ApiResponse<T> {
     pub fn ok(data: T) -> Self {
         Self {
             success: true,
@@ -37,6 +42,52 @@ impl<T> ApiResponse<T> {
             data: None,
             error: Some(msg.to_string()),
         }
+    }
+}
+
+#[derive(Clone)]
+struct AdminState {
+    config: SlitherConfig,
+    ranker: SharedRanker,
+    is_crawling: Arc<AtomicBool>,
+    last_crawl: Arc<tokio::sync::Mutex<Option<String>>>,
+}
+
+#[derive(Debug, Serialize)]
+struct AdminStatus {
+    crawling: bool,
+    last_crawl: Option<String>,
+    seed_count: usize,
+    doc_count: usize,
+}
+
+#[derive(Debug, Deserialize)]
+struct SeedRequest {
+    url: String,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct CrawlRequest {
+    urls: Option<Vec<String>>,
+}
+
+async fn auth_middleware(
+    State(state): State<AdminState>,
+    req: Request,
+    next: Next,
+) -> Response {
+    let api_key = req
+        .headers()
+        .get("X-Api-Key")
+        .and_then(|v| v.to_str().ok());
+
+    match (&state.config.admin_key, api_key) {
+        (Some(expected), Some(provided)) if expected == provided => next.run(req).await,
+        _ => (
+            axum::http::StatusCode::UNAUTHORIZED,
+            Json(ApiResponse::<()>::err("unauthorized")),
+        )
+            .into_response(),
     }
 }
 
@@ -92,19 +143,45 @@ pub async fn serve(config: SlitherConfig, host: &str, port: u16) -> SlitherResul
     std::fs::create_dir_all(&static_dir).ok();
     let index_file = format!("{}/index.html", static_dir);
 
-    let api = Router::new()
+    let search_router = Router::new()
         .route("/search", get(search_handler))
         .route("/stats", get(stats_handler))
         .route("/health", get(health_handler))
-        .layer(cors)
-        .with_state(shared_rankers);
+        .with_state(shared_rankers.clone());
+
+    let admin_state = AdminState {
+        config: config.clone(),
+        ranker: shared_rankers,
+        is_crawling: Arc::new(AtomicBool::new(false)),
+        last_crawl: Arc::new(tokio::sync::Mutex::new(None)),
+    };
+
+    let admin_router = Router::new()
+        .route(
+            "/admin/seeds",
+            get(admin_seeds_handler)
+                .post(admin_add_seed_handler)
+                .delete(admin_remove_seed_handler),
+        )
+        .route("/admin/crawl", post(admin_crawl_handler))
+        .route("/admin/status", get(admin_status_handler))
+        .layer(axum::middleware::from_fn_with_state(
+            admin_state.clone(),
+            auth_middleware,
+        ))
+        .with_state(admin_state);
+
+    let app = Router::new()
+        .merge(search_router)
+        .merge(admin_router)
+        .layer(cors);
 
     let app = if std::path::Path::new(&index_file).exists() {
         let serve_dir = ServeDir::new(&static_dir)
             .not_found_service(ServeFile::new(&index_file));
-        api.fallback_service(serve_dir)
+        app.fallback_service(serve_dir)
     } else {
-        api
+        app
     };
 
     let addr: SocketAddr = format!("{}:{}", host, port).parse()
@@ -115,6 +192,11 @@ pub async fn serve(config: SlitherConfig, host: &str, port: u16) -> SlitherResul
     println!("  GET /search?q=<query>&limit=<n>&mode=<text|semantic|hybrid>");
     println!("  GET /stats");
     println!("  GET /health");
+    println!("  GET /admin/seeds (X-Api-Key required)");
+    println!("  POST /admin/seeds (X-Api-Key required)");
+    println!("  DELETE /admin/seeds (X-Api-Key required)");
+    println!("  POST /admin/crawl (X-Api-Key required)");
+    println!("  GET /admin/status (X-Api-Key required)");
     if std::path::Path::new(&index_file).exists() {
         println!("  Static files: {}", static_dir);
     } else {
@@ -168,4 +250,93 @@ async fn stats_handler(
 
 async fn health_handler() -> Json<ApiResponse<String>> {
     Json(ApiResponse::ok("ok".to_string()))
+}
+
+async fn admin_seeds_handler(
+    State(state): State<AdminState>,
+) -> Json<ApiResponse<Vec<String>>> {
+    let seeds = seeds::load_seeds(&state.config.data_dir);
+    Json(ApiResponse::ok(seeds))
+}
+
+async fn admin_add_seed_handler(
+    State(state): State<AdminState>,
+    Json(body): Json<SeedRequest>,
+) -> Json<ApiResponse<Vec<String>>> {
+    let mut seed_list = seeds::load_seeds(&state.config.data_dir);
+    if !seed_list.contains(&body.url) {
+        seed_list.push(body.url);
+    }
+    match seeds::save_seeds(&state.config.data_dir, &seed_list) {
+        Ok(()) => Json(ApiResponse::ok(seed_list)),
+        Err(e) => Json(ApiResponse::err(&e.to_string())),
+    }
+}
+
+async fn admin_remove_seed_handler(
+    State(state): State<AdminState>,
+    Json(body): Json<SeedRequest>,
+) -> Json<ApiResponse<Vec<String>>> {
+    let mut seed_list = seeds::load_seeds(&state.config.data_dir);
+    seed_list.retain(|s| s != &body.url);
+    match seeds::save_seeds(&state.config.data_dir, &seed_list) {
+        Ok(()) => Json(ApiResponse::ok(seed_list)),
+        Err(e) => Json(ApiResponse::err(&e.to_string())),
+    }
+}
+
+async fn admin_crawl_handler(
+    State(state): State<AdminState>,
+    body: Option<Json<CrawlRequest>>,
+) -> Json<ApiResponse<String>> {
+    if state.is_crawling.load(Ordering::SeqCst) {
+        return Json(ApiResponse::err("crawl already in progress"));
+    }
+
+    let urls = match body {
+        Some(Json(req)) if req.urls.as_ref().map(|u| !u.is_empty()).unwrap_or(false) => {
+            req.urls.unwrap()
+        }
+        _ => seeds::load_seeds(&state.config.data_dir),
+    };
+
+    if urls.is_empty() {
+        return Json(ApiResponse::err("no seed URLs configured"));
+    }
+
+    let is_crawling = state.is_crawling.clone();
+    let last_crawl = state.last_crawl.clone();
+    let config = state.config.clone();
+
+    is_crawling.store(true, Ordering::SeqCst);
+
+    tokio::spawn(async move {
+        let _ = crate::pipeline::crawl(config, urls).await;
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs().to_string())
+            .unwrap_or_else(|_| "0".to_string());
+        let mut guard = last_crawl.lock().await;
+        *guard = Some(ts);
+        drop(guard);
+        is_crawling.store(false, Ordering::SeqCst);
+    });
+
+    Json(ApiResponse::ok("crawl started".to_string()))
+}
+
+async fn admin_status_handler(
+    State(state): State<AdminState>,
+) -> Json<ApiResponse<AdminStatus>> {
+    let crawling = state.is_crawling.load(Ordering::SeqCst);
+    let last_crawl = state.last_crawl.lock().await.clone();
+    let seed_count = seeds::load_seeds(&state.config.data_dir).len();
+    let doc_count = state.ranker.lock().await.index.doc_count();
+
+    Json(ApiResponse::ok(AdminStatus {
+        crawling,
+        last_crawl,
+        seed_count,
+        doc_count,
+    }))
 }

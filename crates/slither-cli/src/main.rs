@@ -4,6 +4,8 @@ use tracing::error;
 
 mod pipeline;
 mod api;
+mod admin;
+mod seeds;
 
 #[derive(Parser)]
 #[command(
@@ -98,6 +100,32 @@ enum Commands {
         #[arg(long, help = "Write default configuration to slither.json")]
         init: bool,
     },
+
+    #[command(about = "Manage the search engine remotely")]
+    Admin {
+        #[command(subcommand)]
+        action: AdminAction,
+
+        #[arg(long, default_value = "http://localhost:8080", help = "Server URL")]
+        server: String,
+
+        #[arg(long, env = "SLITHER_ADMIN_KEY", help = "Admin API key")]
+        key: String,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AdminAction {
+    #[command(about = "List seed URLs")]
+    Seeds,
+    #[command(about = "Add a seed URL")]
+    AddSeed { url: String },
+    #[command(about = "Remove a seed URL")]
+    RemoveSeed { url: String },
+    #[command(about = "Trigger a crawl")]
+    Crawl,
+    #[command(about = "Check server status")]
+    Status,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -184,6 +212,11 @@ async fn main() {
         }
 
         Commands::Config { show, init } => pipeline::config_cmd(config, show, init).await,
+
+        Commands::Admin { action, server, key } => {
+            admin::run_admin(action, server, key).await;
+            return;
+        }
     };
 
     if let Err(e) = result {
