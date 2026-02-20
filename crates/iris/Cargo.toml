@@ -1,0 +1,17 @@
+[package]
+name = "iris"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+slither-core = { workspace = true }
+ort = { workspace = true }
+ndarray = "0.17"
+serde = { workspace = true }
+serde_json = { workspace = true }
+memmap2 = { workspace = true }
+byteorder = { workspace = true }
+parking_lot = { workspace = true }
+tracing = { workspace = true }
+tokenizers = { workspace = true }

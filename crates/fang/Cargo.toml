@@ -1,0 +1,15 @@
+[package]
+name = "fang"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+slither-core = { workspace = true }
+serde = { workspace = true }
+scraper = { workspace = true }
+url = { workspace = true }
+regex = { workspace = true }
+whatlang = { workspace = true }
+unicode-segmentation = { workspace = true }
+xxhash-rust = { workspace = true }
+tracing = { workspace = true }

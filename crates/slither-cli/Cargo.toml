@@ -1,0 +1,23 @@
+[package]
+name = "slither-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "slither"
+path = "src/main.rs"
+
+[dependencies]
+slither-core = { workspace = true }
+snake = { workspace = true }
+fang = { workspace = true }
+tome = { workspace = true }
+iris = { workspace = true }
+venom = { workspace = true }
+tokio = { workspace = true }
+clap = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+serde_json = { workspace = true }
+anyhow = "1"

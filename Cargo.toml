@@ -1,0 +1,55 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/slither-core",
+    "crates/snake",
+    "crates/fang",
+    "crates/tome",
+    "crates/iris",
+    "crates/venom",
+    "crates/slither-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+slither-core = { path = "crates/slither-core" }
+snake = { path = "crates/snake" }
+fang = { path = "crates/fang" }
+tome = { path = "crates/tome" }
+iris = { path = "crates/iris" }
+venom = { path = "crates/venom" }
+
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+reqwest = { version = "0.12", features = ["gzip", "brotli", "deflate", "cookies", "rustls-tls"], default-features = false }
+url = { version = "2", features = ["serde"] }
+scraper = "0.22"
+crossbeam-deque = "0.8"
+governor = "0.8"
+dashmap = "6"
+memmap2 = "0.9"
+byteorder = "1"
+parking_lot = "0.12"
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
+ort = { version = "2.0.0-rc.11" }
+tokenizers = "0.21"
+ndarray = "0.16"
+clap = { version = "4", features = ["derive"] }
+regex = "1"
+whatlang = "0.16"
+unicode-segmentation = "1"
+nonzero_ext = "0.3"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
