@@ -24,6 +24,8 @@ pub struct Document {
     pub lang: Option<String>,
     pub content_hash: u64,
     pub crawled_at: u64,
+    #[serde(default)]
+    pub favicon_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

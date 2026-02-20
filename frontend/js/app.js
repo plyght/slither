@@ -38,6 +38,28 @@
         }
     }
 
+    function extractHostname(url) {
+        try {
+            return new URL(url).hostname.replace(/^www\./, '');
+        } catch (e) {
+            return '';
+        }
+    }
+
+    function formatUrl(url) {
+        try {
+            var u = new URL(url);
+            var host = u.hostname.replace(/^www\./, '');
+            var path = u.pathname;
+            if (path === '/' || path === '') return host;
+            var segments = path.replace(/\/$/, '').split('/').filter(Boolean);
+            if (segments.length === 0) return host;
+            return host + ' \u203A ' + segments.join(' \u203A ');
+        } catch (e) {
+            return url;
+        }
+    }
+
     function escapeHtml(str) {
         var el = document.createElement('span');
         el.textContent = str;
@@ -66,8 +88,8 @@
         var html = '';
         for (var i = 0; i < count; i++) {
             html += '<div class="skeleton" aria-hidden="true">' +
-                '<div class="skeleton-line skeleton-title"></div>' +
                 '<div class="skeleton-line skeleton-url"></div>' +
+                '<div class="skeleton-line skeleton-title"></div>' +
                 '<div class="skeleton-line skeleton-text-1"></div>' +
                 '<div class="skeleton-line skeleton-text-2"></div>' +
                 '</div>';
@@ -145,14 +167,16 @@
 
                 var html = '';
                 results.forEach(function (r, i) {
+                    var hostname = extractHostname(r.url);
+                    var faviconSrc = '/favicon?domain=' + encodeURIComponent(hostname);
                     html += '<article class="result" style="--i:' + i + '">' +
-                        '<span class="result-rank">[' + (i + 1) + ']</span>' +
-                        '<div class="result-body">' +
+                        '<div class="result-header">' +
+                        '<img class="result-favicon" src="' + faviconSrc + '" alt="" width="16" height="16" loading="lazy" onerror="this.style.display=\'none\'">' +
+                        '<cite class="result-url">' + escapeHtml(formatUrl(r.url)) + '</cite>' +
+                        '</div>' +
                         '<h3><a href="' + escapeHtml(r.url) + '" class="result-title">' + escapeHtml(r.title || 'Untitled') + '</a></h3>' +
-                        '<cite class="result-url">' + escapeHtml(extractDomain(r.url)) + '</cite>' +
                         '<p class="result-snippet">' + highlightTerms(truncateSnippet(r.snippet, 280), query) + '</p>' +
-                        '<span class="result-score">' + r.score.toFixed(4) + '</span>' +
-                        '</div></article>';
+                        '</article>';
                 });
                 resultsList.innerHTML = html;
             })

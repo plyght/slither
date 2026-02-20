@@ -2,6 +2,7 @@ use axum::{
     extract::Query,
     extract::Request,
     extract::State,
+    http::{header, StatusCode},
     middleware::Next,
     response::{IntoResponse, Json, Response},
     routing::{get, post},
@@ -9,6 +10,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
@@ -43,6 +45,11 @@ impl<T: Serialize> ApiResponse<T> {
             error: Some(msg.to_string()),
         }
     }
+}
+
+#[derive(Clone)]
+struct FaviconState {
+    favicon_dir: PathBuf,
 }
 
 #[derive(Clone)]
@@ -143,11 +150,18 @@ pub async fn serve(config: SlitherConfig, host: &str, port: u16) -> SlitherResul
     std::fs::create_dir_all(&static_dir).ok();
     let index_file = format!("{}/index.html", static_dir);
 
+    let favicon_dir = PathBuf::from(&config.data_dir).join("favicons");
+    std::fs::create_dir_all(&favicon_dir).ok();
+
     let search_router = Router::new()
         .route("/search", get(search_handler))
         .route("/stats", get(stats_handler))
         .route("/health", get(health_handler))
         .with_state(shared_rankers.clone());
+
+    let favicon_router = Router::new()
+        .route("/favicon", get(favicon_handler))
+        .with_state(FaviconState { favicon_dir });
 
     let admin_state = AdminState {
         config: config.clone(),
@@ -173,6 +187,7 @@ pub async fn serve(config: SlitherConfig, host: &str, port: u16) -> SlitherResul
 
     let app = Router::new()
         .merge(search_router)
+        .merge(favicon_router)
         .merge(admin_router)
         .layer(cors);
 
@@ -192,6 +207,7 @@ pub async fn serve(config: SlitherConfig, host: &str, port: u16) -> SlitherResul
     println!("  GET /search?q=<query>&limit=<n>&mode=<text|semantic|hybrid>");
     println!("  GET /stats");
     println!("  GET /health");
+    println!("  GET /favicon?domain=<domain>");
     println!("  GET /admin/seeds (X-Api-Key required)");
     println!("  POST /admin/seeds (X-Api-Key required)");
     println!("  DELETE /admin/seeds (X-Api-Key required)");
@@ -339,4 +355,56 @@ async fn admin_status_handler(
         seed_count,
         doc_count,
     }))
+}
+
+#[derive(Debug, Deserialize)]
+struct FaviconParams {
+    domain: String,
+}
+
+fn sanitize_domain(domain: &str) -> String {
+    domain
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '.' || c == '-' { c } else { '_' })
+        .collect()
+}
+
+fn detect_content_type(bytes: &[u8]) -> &'static str {
+    if bytes.starts_with(b"\x89PNG") {
+        "image/png"
+    } else if bytes.starts_with(b"GIF") {
+        "image/gif"
+    } else if bytes.starts_with(b"\xFF\xD8") {
+        "image/jpeg"
+    } else if bytes.starts_with(b"<svg") || bytes.starts_with(b"<?xml") {
+        "image/svg+xml"
+    } else if bytes.starts_with(b"RIFF") && bytes.len() > 12 && &bytes[8..12] == b"WEBP" {
+        "image/webp"
+    } else {
+        "image/x-icon"
+    }
+}
+
+async fn favicon_handler(
+    Query(params): Query<FaviconParams>,
+    State(state): State<FaviconState>,
+) -> Response {
+    let clean = sanitize_domain(&params.domain);
+    let path = state.favicon_dir.join(&clean);
+
+    match std::fs::read(&path) {
+        Ok(bytes) if !bytes.is_empty() => {
+            let ct = detect_content_type(&bytes);
+            (
+                StatusCode::OK,
+                [
+                    (header::CONTENT_TYPE, ct),
+                    (header::CACHE_CONTROL, "public, max-age=604800, immutable"),
+                ],
+                bytes,
+            )
+                .into_response()
+        }
+        _ => StatusCode::NOT_FOUND.into_response(),
+    }
 }

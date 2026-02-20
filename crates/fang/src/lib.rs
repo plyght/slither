@@ -12,7 +12,8 @@ use tracing::warn;
 use xxhash_rust::xxh3::xxh3_64;
 
 use extractor::{
-    compute_content_hash, extract_headings, extract_lang, extract_meta_description, extract_title,
+    compute_content_hash, extract_favicon_url, extract_headings, extract_lang,
+    extract_meta_description, extract_title,
 };
 use links::extract_links;
 use text::extract_clean_text;
@@ -64,8 +65,7 @@ impl Fang {
             .unwrap_or("text/html");
 
         let ct_lower = content_type.to_ascii_lowercase();
-        let is_html = ct_lower.contains("text/html")
-            || ct_lower.contains("application/xhtml");
+        let is_html = ct_lower.contains("text/html") || ct_lower.contains("application/xhtml");
 
         if !is_html {
             return Err(SlitherError::Transform(format!(
@@ -98,6 +98,7 @@ impl Fang {
 
         let lang = extract_lang(&document, &body);
         let content_hash = compute_content_hash(&body);
+        let favicon_url = extract_favicon_url(&document, &page.url);
 
         let links = if self.config.extract_links {
             extract_links(&document, &page.url)
@@ -119,6 +120,7 @@ impl Fang {
             lang,
             content_hash,
             crawled_at: page.crawled_at,
+            favicon_url,
         })
     }
 }

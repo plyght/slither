@@ -1,4 +1,5 @@
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 use fang::{Fang, FangConfig};
 use iris::Iris;
@@ -24,6 +25,9 @@ pub async fn crawl(config: SlitherConfig, urls: Vec<String>) -> SlitherResult<()
     let known_ids = index.known_doc_ids();
     let mut ranker = Ranker::new(index, embedder);
 
+    let favicon_dir = PathBuf::from(&config.data_dir).join("favicons");
+    std::fs::create_dir_all(&favicon_dir)?;
+
     let snake = Crawler::new(config.crawler.clone()).with_known_urls(known_ids);
     let (tx, mut rx) = tokio::sync::mpsc::channel::<RawPage>(256);
 
@@ -31,6 +35,7 @@ pub async fn crawl(config: SlitherConfig, urls: Vec<String>) -> SlitherResult<()
 
     let mut pages_crawled: usize = 0;
     let mut pages_indexed: usize = 0;
+    let mut domain_favicons: HashMap<String, Option<String>> = HashMap::new();
 
     let ctrl_c = tokio::signal::ctrl_c();
     tokio::pin!(ctrl_c);
@@ -53,8 +58,12 @@ pub async fn crawl(config: SlitherConfig, urls: Vec<String>) -> SlitherResult<()
                     None => break,
                     Some(raw_page) => {
                         pages_crawled += 1;
+                        let page_domain = raw_page.domain.clone();
                         match transformer.transform(&raw_page) {
                             Ok(doc) => {
+                                if !domain_favicons.contains_key(&page_domain) {
+                                    domain_favicons.insert(page_domain, doc.favicon_url.clone());
+                                }
                                 match ranker.index_document(&doc) {
                                     Ok(()) => pages_indexed += 1,
                                     Err(e) => {
@@ -98,6 +107,23 @@ pub async fn crawl(config: SlitherConfig, urls: Vec<String>) -> SlitherResult<()
         "  Crawled {} pages, indexed {} documents",
         pages_crawled, pages_indexed
     );
+
+    let new_domains: Vec<(String, String)> = domain_favicons
+        .into_iter()
+        .filter_map(|(domain, url)| {
+            let url = url?;
+            let path = favicon_dir.join(sanitize_domain(&domain));
+            if path.exists() {
+                return None;
+            }
+            Some((domain, url))
+        })
+        .collect();
+
+    if !new_domains.is_empty() {
+        println!("Fetching favicons for {} new domain(s)...", new_domains.len());
+        fetch_favicons(&favicon_dir, &new_domains).await;
+    }
 
     info!(pages_crawled, pages_indexed, "crawl pipeline finished");
 
@@ -224,6 +250,55 @@ fn human_bytes(bytes: u64) -> String {
     } else {
         format!("{bytes} B")
     }
+}
+
+fn sanitize_domain(domain: &str) -> String {
+    domain
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '.' || c == '-' { c } else { '_' })
+        .collect()
+}
+
+async fn fetch_favicons(favicon_dir: &Path, domains: &[(String, String)]) {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .redirect(reqwest::redirect::Policy::limited(3))
+        .build()
+        .unwrap_or_default();
+
+    let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(10));
+    let mut handles = Vec::new();
+
+    for (domain, url) in domains {
+        let client = client.clone();
+        let url = url.clone();
+        let domain = domain.clone();
+        let dir = favicon_dir.to_path_buf();
+        let sem = semaphore.clone();
+
+        handles.push(tokio::spawn(async move {
+            let _permit = sem.acquire().await.ok()?;
+            let resp = client.get(&url).send().await.ok()?;
+            if !resp.status().is_success() {
+                return None;
+            }
+            let bytes = resp.bytes().await.ok()?;
+            if bytes.is_empty() || bytes.len() > 102_400 {
+                return None;
+            }
+            let path = dir.join(sanitize_domain(&domain));
+            std::fs::write(&path, &bytes).ok()?;
+            Some(domain)
+        }));
+    }
+
+    let mut fetched = 0usize;
+    for handle in handles {
+        if let Ok(Some(_)) = handle.await {
+            fetched += 1;
+        }
+    }
+    println!("  Fetched {fetched} favicon(s)");
 }
 
 #[cfg(unix)]

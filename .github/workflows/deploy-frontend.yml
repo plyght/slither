@@ -5,12 +5,19 @@ on:
     branches: [master]
     paths:
       - 'frontend/**'
+  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Cache-bust static assets
+        run: |
+          V="${GITHUB_SHA::8}"
+          sed -i "s|/css/styles.css|/css/styles.css?v=$V|g" frontend/index.html
+          sed -i "s|/js/app.js|/js/app.js?v=$V|g" frontend/index.html
 
       - name: Deploy to server
         uses: appleboy/scp-action@v0.1.7
@@ -22,3 +29,15 @@ jobs:
           target: /home/nico/slither/
           strip_components: 0
           overwrite: true
+
+      - name: Purge Cloudflare cache
+        if: env.CF_ZONE_ID != ''
+        run: |
+          curl -sf -X POST \
+            "https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/purge_cache" \
+            -H "Authorization: Bearer $CF_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"purge_everything":true}'
+        env:
+          CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}

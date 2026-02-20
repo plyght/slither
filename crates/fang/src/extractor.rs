@@ -150,6 +150,35 @@ pub fn extract_headings(document: &Html) -> Vec<String> {
         .collect()
 }
 
+pub fn extract_favicon_url(document: &Html, page_url: &str) -> Option<String> {
+    let base = url::Url::parse(page_url).ok()?;
+
+    let selectors = [
+        "link[rel='icon']",
+        "link[rel='shortcut icon']",
+        "link[rel='apple-touch-icon']",
+        "link[rel='apple-touch-icon-precomposed']",
+    ];
+
+    for selector_str in &selectors {
+        if let Some(sel) = Selector::parse(selector_str).ok() {
+            if let Some(el) = document.select(&sel).next() {
+                if let Some(href) = el.value().attr("href") {
+                    if let Ok(resolved) = base.join(href) {
+                        return Some(resolved.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    let mut origin = base.clone();
+    origin.set_path("/favicon.ico");
+    origin.set_query(None);
+    origin.set_fragment(None);
+    Some(origin.to_string())
+}
+
 pub fn compute_content_hash(body: &str) -> u64 {
     xxh3_64(body.as_bytes())
 }
