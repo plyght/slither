@@ -1,0 +1,18 @@
+#!/bin/bash
+set -euo pipefail
+
+CONFIG="/home/nico/slither/slither.json"
+LOG="/var/log/slither-crawl.log"
+
+echo "$(date -Iseconds) Starting crawl cycle using seeds.json" >> "$LOG"
+
+timeout --signal=INT 3600 /usr/local/bin/slither --config "$CONFIG" crawl --seeds \
+    --concurrent 20 >> "$LOG" 2>&1 || true
+
+echo "$(date -Iseconds) Crawl cycle complete" >> "$LOG"
+
+echo "REDACTED_PASSWORD" | sudo -S systemctl restart slither-serve 2>/dev/null || true
+echo "$(date -Iseconds) Restarted slither-serve" >> "$LOG"
+
+rclone sync /mnt/r2-slither r2:slither --transfers 4 --size-only >> "$LOG" 2>&1 || true
+echo "$(date -Iseconds) R2 sync complete" >> "$LOG"

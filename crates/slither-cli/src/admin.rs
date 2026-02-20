@@ -6,12 +6,7 @@ pub async fn run_admin(action: AdminAction, server: String, key: String) {
     match action {
         AdminAction::Seeds => {
             let url = format!("{server}/admin/seeds");
-            match client
-                .get(&url)
-                .header("X-Api-Key", &key)
-                .send()
-                .await
-            {
+            match client.get(&url).header("X-Api-Key", &key).send().await {
                 Ok(resp) => {
                     let status = resp.status();
                     match resp.text().await {
@@ -36,9 +31,28 @@ pub async fn run_admin(action: AdminAction, server: String, key: String) {
             }
         }
 
-        AdminAction::AddSeed { url: seed_url } => {
+        AdminAction::AddSeed {
+            url: seed_url,
+            depth,
+            scope,
+            priority,
+            sitemap,
+        } => {
             let url = format!("{server}/admin/seeds");
-            let body = serde_json::json!({ "url": seed_url });
+            let mut body = serde_json::json!({ "url": seed_url });
+            if let Some(d) = depth {
+                body["depth"] = serde_json::json!(d);
+            }
+            if let Some(s) = scope {
+                body["scope"] = serde_json::json!(s);
+            }
+            if let Some(p) = priority {
+                body["priority"] = serde_json::json!(p);
+            }
+            if sitemap {
+                body["sitemap"] = serde_json::json!(true);
+            }
+            let body = body;
             match client
                 .post(&url)
                 .header("X-Api-Key", &key)
@@ -139,12 +153,7 @@ pub async fn run_admin(action: AdminAction, server: String, key: String) {
 
         AdminAction::Status => {
             let url = format!("{server}/admin/status");
-            match client
-                .get(&url)
-                .header("X-Api-Key", &key)
-                .send()
-                .await
-            {
+            match client.get(&url).header("X-Api-Key", &key).send().await {
                 Ok(resp) => {
                     let status = resp.status();
                     match resp.text().await {

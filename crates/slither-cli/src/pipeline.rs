@@ -3,17 +3,19 @@ use std::path::{Path, PathBuf};
 
 use fang::{Fang, FangConfig};
 use iris::Iris;
-use slither_core::{RawPage, SearchMode, SearchQuery, SlitherConfig, SlitherResult};
+use slither_core::{
+    CrawlScope, RawPage, SearchMode, SearchQuery, Seed, SlitherConfig, SlitherResult,
+};
 use snake::Crawler;
 use tome::Index;
 use tracing::{info, warn};
 use venom::Ranker;
 
-pub async fn crawl(config: SlitherConfig, urls: Vec<String>) -> SlitherResult<()> {
-    let seed_count = urls.len();
+pub async fn crawl(config: SlitherConfig, seeds: Vec<Seed>) -> SlitherResult<()> {
+    let seed_count = seeds.len();
     println!(
-        "Starting crawl from {} seed URL(s) (depth={}, concurrent={})...",
-        seed_count, config.crawler.max_depth, config.crawler.max_concurrent
+        "Starting crawl from {} seed(s) (concurrent={})...",
+        seed_count, config.crawler.max_concurrent
     );
 
     std::fs::create_dir_all(&config.index.data_dir)?;
@@ -31,7 +33,21 @@ pub async fn crawl(config: SlitherConfig, urls: Vec<String>) -> SlitherResult<()
     let snake = Crawler::new(config.crawler.clone()).with_known_urls(known_ids);
     let (tx, mut rx) = tokio::sync::mpsc::channel::<RawPage>(256);
 
-    let crawl_handle = tokio::spawn(async move { snake.crawl(urls, tx).await });
+    let mut sorted_seeds = seeds;
+    sorted_seeds.sort_by(|a, b| b.priority().cmp(&a.priority()));
+
+    let mut resolved: Vec<(String, usize, CrawlScope)> = Vec::new();
+    for seed in &sorted_seeds {
+        if seed.sitemap() {
+            let sitemap_urls = snake::sitemap::discover_sitemap_urls(seed.url(), 500).await;
+            for url in sitemap_urls {
+                resolved.push((url, seed.depth(), seed.scope()));
+            }
+        }
+        resolved.push((seed.url().to_string(), seed.depth(), seed.scope()));
+    }
+
+    let crawl_handle = tokio::spawn(async move { snake.crawl(resolved, tx).await });
 
     let mut pages_crawled: usize = 0;
     let mut pages_indexed: usize = 0;
@@ -121,7 +137,10 @@ pub async fn crawl(config: SlitherConfig, urls: Vec<String>) -> SlitherResult<()
         .collect();
 
     if !new_domains.is_empty() {
-        println!("Fetching favicons for {} new domain(s)...", new_domains.len());
+        println!(
+            "Fetching favicons for {} new domain(s)...",
+            new_domains.len()
+        );
         fetch_favicons(&favicon_dir, &new_domains).await;
     }
 
@@ -255,7 +274,13 @@ fn human_bytes(bytes: u64) -> String {
 fn sanitize_domain(domain: &str) -> String {
     domain
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '.' || c == '-' { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '.' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect()
 }
 
@@ -302,23 +327,33 @@ async fn fetch_favicons(favicon_dir: &Path, domains: &[(String, String)]) {
 }
 
 #[cfg(unix)]
-fn check_storage_limits(index_dir: &str, vector_dir: &str, config: &slither_core::StorageConfig) -> (bool, String) {
+fn check_storage_limits(
+    index_dir: &str,
+    vector_dir: &str,
+    config: &slither_core::StorageConfig,
+) -> (bool, String) {
     let index_size = dir_size(index_dir);
     let vector_size = dir_size(vector_dir);
     let total_size = index_size + vector_size;
-    
+
     const GB: u64 = 1024 * 1024 * 1024;
     let total_gb = total_size as f64 / GB as f64;
-    
+
     if let Some(max_gb) = config.max_gb {
         if total_gb >= max_gb {
-            return (false, format!("Storage limit reached: {:.2}GB / {:.0}GB", total_gb, max_gb));
+            return (
+                false,
+                format!("Storage limit reached: {:.2}GB / {:.0}GB", total_gb, max_gb),
+            );
         }
     }
-    
+
     if total_gb >= config.warning_threshold_gb {
-        return (true, format!("WARNING: {:.2}GB (limit: {:?}GB)", total_gb, config.max_gb));
+        return (
+            true,
+            format!("WARNING: {:.2}GB (limit: {:?}GB)", total_gb, config.max_gb),
+        );
     }
-    
+
     (true, format!("{:.2}GB", total_gb))
 }

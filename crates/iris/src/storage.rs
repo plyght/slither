@@ -59,7 +59,10 @@ impl VectorStorage {
 
         debug!(
             "VectorStorage: {} vectors, {} unique IDs, dim={}, path={:?}",
-            vector_count, stored_ids.len(), dimensions, vectors_path
+            vector_count,
+            stored_ids.len(),
+            dimensions,
+            vectors_path
         );
 
         Ok(Self {
@@ -71,7 +74,10 @@ impl VectorStorage {
         })
     }
 
-    fn load_stored_ids(vecmap_path: &std::path::Path, expected_count: u64) -> Result<HashSet<u64>, SlitherError> {
+    fn load_stored_ids(
+        vecmap_path: &std::path::Path,
+        expected_count: u64,
+    ) -> Result<HashSet<u64>, SlitherError> {
         let mut ids = HashSet::with_capacity(expected_count as usize);
         if !vecmap_path.exists() {
             File::create(vecmap_path)?;

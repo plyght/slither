@@ -1,11 +1,11 @@
-use slither_core::{SlitherError, SlitherResult};
+use slither_core::{Seed, SlitherError, SlitherResult};
 use std::path::{Path, PathBuf};
 
 pub fn seeds_path(data_dir: &str) -> PathBuf {
     Path::new(data_dir).join("seeds.json")
 }
 
-pub fn load_seeds(data_dir: &str) -> Vec<String> {
+pub fn load_seeds(data_dir: &str) -> Vec<Seed> {
     let path = seeds_path(data_dir);
     match std::fs::read_to_string(&path) {
         Ok(contents) => serde_json::from_str(&contents).unwrap_or_default(),
@@ -13,7 +13,7 @@ pub fn load_seeds(data_dir: &str) -> Vec<String> {
     }
 }
 
-pub fn save_seeds(data_dir: &str, seeds: &[String]) -> SlitherResult<()> {
+pub fn save_seeds(data_dir: &str, seeds: &[Seed]) -> SlitherResult<()> {
     let path = seeds_path(data_dir);
     let tmp_path = path.with_extension("json.tmp");
     let json = serde_json::to_string_pretty(seeds)?;

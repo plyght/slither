@@ -69,7 +69,11 @@ impl DocStoreWriter {
             offsets.push((offset, len));
         }
         let data = raw[data_section_offset..].to_vec();
-        Ok(Self { path, offsets, data })
+        Ok(Self {
+            path,
+            offsets,
+            data,
+        })
     }
 
     pub fn append(&mut self, doc: &StoredDoc) -> Result<u64, SlitherError> {

@@ -1,5 +1,6 @@
 use crossbeam_deque::{Injector, Steal};
 use dashmap::DashMap;
+use slither_core::CrawlScope;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 use xxhash_rust::xxh3::xxh3_64;
@@ -8,6 +9,9 @@ use xxhash_rust::xxh3::xxh3_64;
 pub struct CrawlTask {
     pub url: String,
     pub depth: usize,
+    pub max_depth: usize,
+    pub scope: CrawlScope,
+    pub scope_domain: Option<String>,
 }
 
 pub struct Frontier {
@@ -45,18 +49,44 @@ impl Frontier {
         xxh3_64(url.as_bytes())
     }
 
-    pub fn seed(&self, url: String) {
+    pub fn seed(
+        &self,
+        url: String,
+        max_depth: usize,
+        scope: CrawlScope,
+        scope_domain: Option<String>,
+    ) {
         let key = Self::url_key(&url);
         self.seen.insert(key, ());
         self.pending.fetch_add(1, Ordering::SeqCst);
-        self.global.push(CrawlTask { url, depth: 0 });
+        self.global.push(CrawlTask {
+            url,
+            depth: 0,
+            max_depth,
+            scope,
+            scope_domain,
+        });
     }
 
-    pub fn try_push(&self, url: String, depth: usize, local: &Injector<CrawlTask>) -> bool {
+    pub fn try_push(
+        &self,
+        url: String,
+        depth: usize,
+        max_depth: usize,
+        scope: CrawlScope,
+        scope_domain: Option<String>,
+        local: &Injector<CrawlTask>,
+    ) -> bool {
         let key = Self::url_key(&url);
         if self.seen.insert(key, ()).is_none() {
             self.pending.fetch_add(1, Ordering::SeqCst);
-            local.push(CrawlTask { url, depth });
+            local.push(CrawlTask {
+                url,
+                depth,
+                max_depth,
+                scope,
+                scope_domain,
+            });
             true
         } else {
             false

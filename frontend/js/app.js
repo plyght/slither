@@ -26,6 +26,7 @@
     var acResults = [];
     var acDebounceTimer = null;
     var acController = null;
+    var acLastQuery = '';
 
     function setState(state) {
         body.setAttribute('data-state', state);
@@ -202,7 +203,7 @@
         setState('home');
         searchInput.value = '';
         updateClearBtn();
-        acHide();
+        acDismiss();
         resultsList.innerHTML = '';
         resultsMeta.textContent = '';
         searchInput.focus();
@@ -221,7 +222,12 @@
         searchInput.classList.remove('has-autocomplete');
         searchInput.setAttribute('aria-expanded', 'false');
         acActiveIndex = -1;
+    }
+
+    function acDismiss() {
+        acHide();
         acResults = [];
+        acLastQuery = '';
     }
 
     function acHighlight(index) {
@@ -239,7 +245,8 @@
 
     function acSelect(item) {
         searchInput.value = item.title || item.url;
-        acHide();
+        acDismiss();
+        searchInput.blur();
         updateClearBtn();
         doSearch(searchInput.value, currentMode, true);
     }
@@ -269,8 +276,6 @@
                 '</div>' +
                 '</li>';
         }
-        html += '<div class="autocomplete-hint"><span><kbd>&uarr;</kbd><kbd>&darr;</kbd> navigate</span><span><kbd>Enter</kbd> select &middot; <kbd>Esc</kbd> close</span></div>';
-
         autocompleteList.innerHTML = html;
         acShow();
 
@@ -289,19 +294,25 @@
     function acFetch(query) {
         if (acController) acController.abort();
         acController = new AbortController();
+        acLastQuery = query;
 
         var params = '?q=' + encodeURIComponent(query.trim()) + '&limit=6&mode=' + currentMode;
         fetch(API_BASE + '/search' + params, { signal: acController.signal })
             .then(function (r) { return r.json(); })
             .then(function (data) {
+                if (document.activeElement !== searchInput) return;
                 if (data.success && data.data && data.data.length > 0) {
                     acRender(data.data, query);
                 } else {
                     acHide();
+                    acResults = [];
                 }
             })
             .catch(function (err) {
-                if (err.name !== 'AbortError') acHide();
+                if (err.name !== 'AbortError') {
+                    acHide();
+                    acResults = [];
+                }
             });
     }
 
@@ -309,17 +320,20 @@
         var val = searchInput.value.trim();
         if (val.length < 2) {
             acHide();
+            acResults = [];
+            acLastQuery = '';
             return;
         }
         clearTimeout(acDebounceTimer);
         acDebounceTimer = setTimeout(function () {
             acFetch(val);
-        }, 200);
+        }, 250);
     }
 
     searchForm.addEventListener('submit', function (e) {
         e.preventDefault();
-        acHide();
+        acDismiss();
+        searchInput.blur();
         doSearch(searchInput.value, currentMode, true);
     });
 
@@ -328,10 +342,19 @@
         acOnInput();
     });
 
+    searchInput.addEventListener('focus', function () {
+        var val = searchInput.value.trim();
+        if (val.length >= 2 && acResults.length > 0 && acLastQuery === val) {
+            acShow();
+        } else if (val.length >= 2) {
+            acOnInput();
+        }
+    });
+
     searchClear.addEventListener('click', function () {
         searchInput.value = '';
         updateClearBtn();
-        acHide();
+        acDismiss();
         searchInput.focus();
         if (body.getAttribute('data-state') === 'results') {
             goHome();
@@ -343,6 +366,12 @@
             acHide();
         }
     });
+
+    window.addEventListener('scroll', function () {
+        if (autocomplete.classList.contains('visible')) {
+            acHide();
+        }
+    }, { passive: true });
 
     modeButtons.forEach(function (btn) {
         btn.addEventListener('click', function () {
@@ -383,11 +412,11 @@
         }
         if (e.key === 'Escape' && acVisible) {
             e.preventDefault();
-            acHide();
+            acDismiss();
             return;
         }
         if (e.key === 'Tab' && acVisible) {
-            acHide();
+            acDismiss();
         }
         if (e.key === '/' && document.activeElement !== searchInput) {
             e.preventDefault();

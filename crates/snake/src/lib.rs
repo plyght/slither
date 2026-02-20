@@ -2,9 +2,10 @@ pub mod fetcher;
 pub mod frontier;
 pub mod rate_limiter;
 pub mod robots;
+pub mod sitemap;
 pub mod worker;
 
-pub use slither_core::{CrawlerConfig, RawPage};
+pub use slither_core::{CrawlScope, CrawlerConfig, RawPage};
 
 use crossbeam_deque::Injector;
 use fetcher::Fetcher;
@@ -35,7 +36,11 @@ impl Crawler {
         self
     }
 
-    pub async fn crawl(&self, seeds: Vec<String>, tx: Sender<RawPage>) -> Result<(), SlitherError> {
+    pub async fn crawl(
+        &self,
+        seeds: Vec<(String, usize, CrawlScope)>,
+        tx: Sender<RawPage>,
+    ) -> Result<(), SlitherError> {
         let config = &self.config;
         let n_workers = config.max_concurrent.max(1);
 
@@ -55,10 +60,13 @@ impl Crawler {
         };
 
         let mut valid_seeds = 0usize;
-        for raw in &seeds {
+        for (raw, max_depth, scope) in &seeds {
             match normalize_url(raw) {
                 Some(url) => {
-                    frontier.seed(url);
+                    let scope_domain = Url::parse(&url)
+                        .ok()
+                        .and_then(|u| u.host_str().map(|h| h.to_string()));
+                    frontier.seed(url, *max_depth, *scope, scope_domain);
                     valid_seeds += 1;
                 }
                 None => {
@@ -73,8 +81,8 @@ impl Crawler {
         }
 
         info!(
-            "starting crawl: {} seeds, {} workers, max_depth={}",
-            valid_seeds, n_workers, config.max_depth
+            "starting crawl: {} seeds, {} workers",
+            valid_seeds, n_workers
         );
 
         let worker_locals: Vec<Arc<Injector<frontier::CrawlTask>>> =
