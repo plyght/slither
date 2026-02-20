@@ -57,5 +57,5 @@ jobs:
             sleep 2
             curl -sf http://localhost:8080/health || echo "Health check failed"
             rm -f /tmp/slither
-          env:
-            DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
+        env:
+          DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
