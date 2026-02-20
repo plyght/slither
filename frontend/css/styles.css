@@ -140,12 +140,12 @@ body[data-state="results"] .brand-mark {
     letter-spacing: -0.02em;
     line-height: 1.1;
     cursor: default;
-    transition: font-size 0.4s ease;
+    transition: font-size 0.4s ease, letter-spacing 0.3s ease;
     position: relative;
 }
 
-.brand-title.scrambling {
-    filter: blur(0.8px);
+.brand-title:hover {
+    letter-spacing: 0.04em;
 }
 
 body[data-state="results"] .brand-title {
@@ -185,12 +185,12 @@ body[data-state="results"] .brand-tagline {
     font-family: inherit;
     font-size: 1.05rem;
     color: var(--text-primary);
-    background: transparent;
-    border: none;
-    border-bottom: 1px solid var(--border-color);
-    padding: 12px 80px 12px 0;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 14px 80px 14px 18px;
     outline: none;
-    transition: border-color 0.2s ease;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
     -webkit-appearance: none;
     appearance: none;
 }
@@ -207,12 +207,13 @@ body[data-state="results"] .brand-tagline {
 }
 
 .search-input:focus {
-    border-bottom-color: var(--text-secondary);
+    border-color: var(--text-secondary);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--text-secondary) 8%, transparent);
 }
 
 @keyframes searchPulse {
-    0%, 100% { border-bottom-color: var(--border-color); }
-    50% { border-bottom-color: var(--text-secondary); }
+    0%, 100% { border-color: var(--border-color); }
+    50% { border-color: var(--text-secondary); }
 }
 
 .search-input.loading {
@@ -221,7 +222,7 @@ body[data-state="results"] .brand-tagline {
 
 .search-clear {
     position: absolute;
-    right: 38px;
+    right: 42px;
     top: 50%;
     transform: translateY(-50%);
     background: none;
@@ -255,7 +256,7 @@ body[data-state="results"] .brand-tagline {
 
 .search-submit {
     position: absolute;
-    right: 0;
+    right: 6px;
     top: 50%;
     transform: translateY(-50%);
     background: none;

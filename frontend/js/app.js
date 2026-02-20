@@ -243,54 +243,6 @@
         }
     });
 
-    var titleChars = 'abcdefghijklmnopqrstuvwxyz';
-    var titleAnimating = false;
-
-    function scrambleText(text, progress, seed) {
-        return text.split('').map(function (ch, i) {
-            var cp = progress - (i * 0.6);
-            if (cp >= 2.5) return text[i];
-            var idx = Math.floor((seed + i * (cp > 0 ? 3 : 5)) * (cp > 0 ? 7 : 11)) % titleChars.length;
-            return ch === ' ' ? ' ' : titleChars[idx];
-        }).join('');
-    }
-
-    function animateScramble(targetText) {
-        var start = performance.now();
-        var duration = 900;
-        var seed = 0;
-        var lastSeedUpdate = 0;
-        brandTitle.classList.add('scrambling');
-
-        function step(now) {
-            var elapsed = now - start;
-            var progress = (elapsed / duration) * targetText.length * 0.6;
-            if (now - lastSeedUpdate > 42) {
-                seed = Math.random();
-                lastSeedUpdate = now;
-            }
-            brandTitle.textContent = scrambleText(targetText, progress, seed);
-            if (elapsed < duration) {
-                requestAnimationFrame(step);
-            } else {
-                brandTitle.textContent = targetText;
-                setTimeout(function () {
-                    brandTitle.classList.remove('scrambling');
-                    titleAnimating = false;
-                }, 80);
-            }
-        }
-        requestAnimationFrame(step);
-    }
-
-    brandTitle.addEventListener('mouseenter', function () {
-        if (titleAnimating) return;
-        titleAnimating = true;
-        var targets = ['slither', 'sl1th3r', 'sssss'];
-        var available = targets.filter(function (t) { return t !== brandTitle.textContent; });
-        animateScramble(available[Math.floor(Math.random() * available.length)]);
-    });
-
     var colorGen = {
         harmonies: ['monochromatic', 'analogous', 'complementary', 'triadic', 'split-complementary'],
         currentScheme: null,
