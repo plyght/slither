@@ -20,6 +20,12 @@
     var brand = document.getElementById('brand');
     var modeButtons = document.querySelectorAll('.mode-btn');
     var paletteBtn = document.getElementById('paletteBtn');
+    var autocomplete = document.getElementById('autocomplete');
+    var autocompleteList = document.getElementById('autocompleteList');
+    var acActiveIndex = -1;
+    var acResults = [];
+    var acDebounceTimer = null;
+    var acController = null;
 
     function setState(state) {
         body.setAttribute('data-state', state);
@@ -196,6 +202,7 @@
         setState('home');
         searchInput.value = '';
         updateClearBtn();
+        acHide();
         resultsList.innerHTML = '';
         resultsMeta.textContent = '';
         searchInput.focus();
@@ -203,19 +210,137 @@
         history.pushState({}, '', window.location.pathname);
     }
 
+    function acShow() {
+        autocomplete.classList.add('visible');
+        searchInput.classList.add('has-autocomplete');
+        searchInput.setAttribute('aria-expanded', 'true');
+    }
+
+    function acHide() {
+        autocomplete.classList.remove('visible');
+        searchInput.classList.remove('has-autocomplete');
+        searchInput.setAttribute('aria-expanded', 'false');
+        acActiveIndex = -1;
+        acResults = [];
+    }
+
+    function acHighlight(index) {
+        var items = autocompleteList.querySelectorAll('.autocomplete-item');
+        items.forEach(function (el) { el.classList.remove('active'); });
+        acActiveIndex = index;
+        if (index >= 0 && index < items.length) {
+            items[index].classList.add('active');
+            items[index].scrollIntoView({ block: 'nearest' });
+            searchInput.setAttribute('aria-activedescendant', 'ac-item-' + index);
+        } else {
+            searchInput.removeAttribute('aria-activedescendant');
+        }
+    }
+
+    function acSelect(item) {
+        searchInput.value = item.title || item.url;
+        acHide();
+        updateClearBtn();
+        doSearch(searchInput.value, currentMode, true);
+    }
+
+    function acRender(results, query) {
+        acResults = results;
+        acActiveIndex = -1;
+
+        if (results.length === 0) {
+            acHide();
+            return;
+        }
+
+        var html = '';
+        var limit = Math.min(results.length, 6);
+        for (var i = 0; i < limit; i++) {
+            var r = results[i];
+            var title = highlightTerms(r.title || 'Untitled', query);
+            var url = escapeHtml(formatUrl(r.url));
+            var hostname = extractHostname(r.url);
+            var faviconSrc = '/favicon?domain=' + encodeURIComponent(hostname);
+            html += '<li class="autocomplete-item" id="ac-item-' + i + '" role="option" data-index="' + i + '">' +
+                '<img class="autocomplete-item-icon" src="' + faviconSrc + '" alt="" width="16" height="16" loading="lazy" onerror="this.style.opacity=\'0\'">' +
+                '<div class="autocomplete-item-content">' +
+                '<span class="autocomplete-item-title">' + title + '</span>' +
+                '<span class="autocomplete-item-url">' + url + '</span>' +
+                '</div>' +
+                '</li>';
+        }
+        html += '<div class="autocomplete-hint"><span><kbd>&uarr;</kbd><kbd>&darr;</kbd> navigate</span><span><kbd>Enter</kbd> select &middot; <kbd>Esc</kbd> close</span></div>';
+
+        autocompleteList.innerHTML = html;
+        acShow();
+
+        autocompleteList.querySelectorAll('.autocomplete-item').forEach(function (el) {
+            el.addEventListener('mousedown', function (e) {
+                e.preventDefault();
+                var idx = parseInt(el.getAttribute('data-index'), 10);
+                if (acResults[idx]) acSelect(acResults[idx]);
+            });
+            el.addEventListener('mouseenter', function () {
+                acHighlight(parseInt(el.getAttribute('data-index'), 10));
+            });
+        });
+    }
+
+    function acFetch(query) {
+        if (acController) acController.abort();
+        acController = new AbortController();
+
+        var params = '?q=' + encodeURIComponent(query.trim()) + '&limit=6&mode=' + currentMode;
+        fetch(API_BASE + '/search' + params, { signal: acController.signal })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (data.success && data.data && data.data.length > 0) {
+                    acRender(data.data, query);
+                } else {
+                    acHide();
+                }
+            })
+            .catch(function (err) {
+                if (err.name !== 'AbortError') acHide();
+            });
+    }
+
+    function acOnInput() {
+        var val = searchInput.value.trim();
+        if (val.length < 2) {
+            acHide();
+            return;
+        }
+        clearTimeout(acDebounceTimer);
+        acDebounceTimer = setTimeout(function () {
+            acFetch(val);
+        }, 200);
+    }
+
     searchForm.addEventListener('submit', function (e) {
         e.preventDefault();
+        acHide();
         doSearch(searchInput.value, currentMode, true);
     });
 
-    searchInput.addEventListener('input', updateClearBtn);
+    searchInput.addEventListener('input', function () {
+        updateClearBtn();
+        acOnInput();
+    });
 
     searchClear.addEventListener('click', function () {
         searchInput.value = '';
         updateClearBtn();
+        acHide();
         searchInput.focus();
         if (body.getAttribute('data-state') === 'results') {
             goHome();
+        }
+    });
+
+    document.addEventListener('mousedown', function (e) {
+        if (!autocomplete.contains(e.target) && e.target !== searchInput) {
+            acHide();
         }
     });
 
@@ -237,6 +362,33 @@
     });
 
     document.addEventListener('keydown', function (e) {
+        var acVisible = autocomplete.classList.contains('visible');
+
+        if (e.key === 'ArrowDown' && acVisible) {
+            e.preventDefault();
+            var maxIdx = Math.min(acResults.length, 6) - 1;
+            acHighlight(acActiveIndex < maxIdx ? acActiveIndex + 1 : 0);
+            return;
+        }
+        if (e.key === 'ArrowUp' && acVisible) {
+            e.preventDefault();
+            var maxIdx2 = Math.min(acResults.length, 6) - 1;
+            acHighlight(acActiveIndex > 0 ? acActiveIndex - 1 : maxIdx2);
+            return;
+        }
+        if (e.key === 'Enter' && acVisible && acActiveIndex >= 0) {
+            e.preventDefault();
+            if (acResults[acActiveIndex]) acSelect(acResults[acActiveIndex]);
+            return;
+        }
+        if (e.key === 'Escape' && acVisible) {
+            e.preventDefault();
+            acHide();
+            return;
+        }
+        if (e.key === 'Tab' && acVisible) {
+            acHide();
+        }
         if (e.key === '/' && document.activeElement !== searchInput) {
             e.preventDefault();
             searchInput.focus();

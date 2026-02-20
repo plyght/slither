@@ -161,6 +161,9 @@ body[data-state="results"] .brand-title {
     letter-spacing: 0.02em;
     transition: opacity 0.3s ease, max-height 0.3s ease;
     overflow: hidden;
+    cursor: default;
+    -webkit-user-select: none;
+    user-select: none;
 }
 
 body[data-state="results"] .brand-tagline {
@@ -209,6 +212,142 @@ body[data-state="results"] .brand-tagline {
 .search-input:focus {
     border-color: var(--text-secondary);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--text-secondary) 8%, transparent);
+}
+
+.search-input.has-autocomplete {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    border-bottom-color: var(--border-color);
+}
+
+.autocomplete {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-top: none;
+    border-radius: 0 0 10px 10px;
+    box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.08), 0 2px 8px -2px rgba(0, 0, 0, 0.04);
+    overflow: hidden;
+    display: none;
+    opacity: 0;
+    transform: translateY(-2px);
+    transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+@media (prefers-color-scheme: dark) {
+    .autocomplete {
+        box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.3), 0 2px 8px -2px rgba(0, 0, 0, 0.2);
+    }
+}
+
+.autocomplete.visible {
+    display: block;
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.autocomplete-list {
+    list-style: none;
+    margin: 0;
+    padding: 4px 0;
+    max-height: 320px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.autocomplete-list::-webkit-scrollbar {
+    width: 6px;
+}
+
+.autocomplete-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.autocomplete-list::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 3px;
+}
+
+.autocomplete-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    cursor: pointer;
+    transition: background 0.1s ease;
+    min-height: 44px;
+}
+
+.autocomplete-item:hover,
+.autocomplete-item.active {
+    background: color-mix(in srgb, var(--text-primary) 5%, transparent);
+}
+
+.autocomplete-item-icon {
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    color: var(--text-secondary);
+    opacity: 0.5;
+}
+
+.autocomplete-item-content {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.autocomplete-item-title {
+    font-size: 0.92rem;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.3;
+}
+
+.autocomplete-item-title mark {
+    background: transparent;
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.autocomplete-item-url {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    opacity: 0.7;
+}
+
+.autocomplete-hint {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 16px 8px;
+    border-top: 0.5px solid var(--border-color);
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    opacity: 0.5;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.autocomplete-hint kbd {
+    font-family: ui-monospace, 'SFMono-Regular', 'Courier New', monospace;
+    font-size: 0.68rem;
+    padding: 0 4px;
+    border: 0.5px solid var(--border-color);
+    border-radius: 2px;
+    background: var(--bg-primary);
+    margin: 0 2px;
 }
 
 @keyframes searchPulse {
@@ -632,12 +771,22 @@ body[data-state="results"] .site-footer::before {
 
 @media (max-width: 768px) {
     .content-wrap {
-        padding: 0 1.5rem;
-        padding-top: 28vh;
+        padding: 0 1.25rem;
+        padding-top: 24vh;
     }
 
     body[data-state="results"] .content-wrap {
-        padding-top: 32px;
+        padding-top: 28px;
+    }
+
+    .brand {
+        gap: 4px;
+        margin-bottom: 24px;
+    }
+
+    body[data-state="results"] .brand {
+        gap: 8px;
+        margin-bottom: 20px;
     }
 
     .brand-mark {
@@ -658,12 +807,59 @@ body[data-state="results"] .site-footer::before {
         font-size: 1.25rem;
     }
 
+    .brand-tagline {
+        font-size: 0.78rem;
+    }
+
     .search-input {
         font-size: 16px;
+        padding: 12px 72px 12px 14px;
+        border-radius: 10px;
+    }
+
+    .search-input.has-autocomplete {
+        border-bottom-left-radius: 0;
+        border-bottom-right-radius: 0;
+    }
+
+    .search-clear {
+        right: 36px;
+    }
+
+    .search-submit {
+        right: 4px;
+        width: 34px;
+    }
+
+    .search-modes {
+        margin-top: 10px;
+    }
+
+    .mode-btn {
+        font-size: 0.78rem;
+        padding: 2px 8px;
+        min-height: 40px;
     }
 
     .results-section {
-        padding: 0 1.5rem 60px;
+        padding: 0 1.25rem 60px;
+    }
+
+    .results-list {
+        gap: 24px;
+    }
+
+    .result-title {
+        font-size: 1rem;
+    }
+
+    .result-snippet {
+        font-size: 0.84rem;
+        line-height: 1.5;
+    }
+
+    .result-url {
+        font-size: 0.74rem;
     }
 
     .skeleton {
@@ -676,13 +872,72 @@ body[data-state="results"] .site-footer::before {
     }
 
     .site-footer {
-        padding: 20px 1.5rem;
-        padding-bottom: max(20px, env(safe-area-inset-bottom, 20px));
+        padding: 16px 1.25rem;
+        padding-bottom: max(16px, env(safe-area-inset-bottom, 16px));
     }
 
     body[data-state="results"] .site-footer::before {
-        left: 1.5rem;
-        right: 1.5rem;
+        left: 1.25rem;
+        right: 1.25rem;
+    }
+
+    .autocomplete-item {
+        padding: 12px 14px;
+        gap: 10px;
+    }
+
+    .autocomplete-hint {
+        display: none;
+    }
+
+    .autocomplete-list {
+        max-height: 260px;
+    }
+}
+
+@media (max-width: 400px) {
+    .content-wrap {
+        padding: 0 1rem;
+        padding-top: 20vh;
+    }
+
+    body[data-state="results"] .content-wrap {
+        padding-top: 20px;
+    }
+
+    .brand-title {
+        font-size: 1.9rem;
+    }
+
+    body[data-state="results"] .brand-title {
+        font-size: 1.15rem;
+    }
+
+    .brand-mark {
+        width: 28px;
+        height: 28px;
+    }
+
+    .search-input {
+        padding: 11px 68px 11px 12px;
+    }
+
+    .results-section {
+        padding: 0 1rem 48px;
+    }
+
+    .results-list {
+        gap: 20px;
+    }
+
+    .site-footer {
+        padding: 14px 1rem;
+        padding-bottom: max(14px, env(safe-area-inset-bottom, 14px));
+    }
+
+    body[data-state="results"] .site-footer::before {
+        left: 1rem;
+        right: 1rem;
     }
 }
 

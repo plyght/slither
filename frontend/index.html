@@ -37,6 +37,10 @@
                         autocomplete="off"
                         autofocus
                         aria-label="Search query"
+                        role="combobox"
+                        aria-expanded="false"
+                        aria-controls="autocompleteList"
+                        aria-autocomplete="list"
                     >
                     <button type="button" class="search-clear" id="searchClear" aria-label="Clear search">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -50,6 +54,9 @@
                             <polyline points="12 5 19 12 12 19"/>
                         </svg>
                     </button>
+                    <div class="autocomplete" id="autocomplete">
+                        <ul class="autocomplete-list" id="autocompleteList" role="listbox"></ul>
+                    </div>
                 </div>
                 <div class="search-modes" id="searchModes">
                     <button type="button" class="mode-btn active" data-mode="hybrid">hybrid</button>
