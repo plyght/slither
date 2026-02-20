@@ -101,30 +101,30 @@ enum Commands {
         init: bool,
     },
 
-    #[command(about = "Manage the search engine remotely")]
+    #[command(alias = "a", about = "Manage the search engine remotely")]
     Admin {
         #[command(subcommand)]
         action: AdminAction,
 
-        #[arg(long, default_value = "http://localhost:8080", help = "Server URL")]
+        #[arg(long, short, env = "SLITHER_SERVER", default_value = "http://localhost:8080", help = "Server URL")]
         server: String,
 
-        #[arg(long, env = "SLITHER_ADMIN_KEY", help = "Admin API key")]
+        #[arg(long, short, env = "SLITHER_ADMIN_KEY", help = "Admin API key")]
         key: String,
     },
 }
 
 #[derive(Subcommand)]
 pub enum AdminAction {
-    #[command(about = "List seed URLs")]
+    #[command(alias = "ls", about = "List seed URLs")]
     Seeds,
-    #[command(about = "Add a seed URL")]
+    #[command(alias = "add", about = "Add a seed URL")]
     AddSeed { url: String },
-    #[command(about = "Remove a seed URL")]
+    #[command(alias = "rm", about = "Remove a seed URL")]
     RemoveSeed { url: String },
-    #[command(about = "Trigger a crawl")]
+    #[command(alias = "c", about = "Trigger a crawl")]
     Crawl,
-    #[command(about = "Check server status")]
+    #[command(alias = "st", about = "Check server status")]
     Status,
 }
 

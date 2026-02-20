@@ -52,6 +52,34 @@ slither serve --port 8080
 slither stats
 ```
 
+### Remote Admin
+
+Manage a running slither instance remotely via the `admin` subcommand (alias `a`). Requires an API key.
+
+```bash
+# Set env vars (or pass --server / --key each time)
+export SLITHER_ADMIN_KEY="your-key"
+export SLITHER_SERVER="https://search.peril.lol"
+
+# List seed URLs
+slither a seeds
+
+# Add / remove seeds
+slither a add https://example.com
+slither a rm https://example.com
+
+# Trigger a crawl
+slither a c
+
+# Check server status
+slither a st
+
+# Override server for a one-off command
+slither a -s http://localhost:8080 seeds
+```
+
+All admin endpoints are authenticated with the `X-Api-Key` header. The key is set in `slither.json` under `admin_key`.
+
 ## Configuration
 
 Create a `slither.json` file to customize behavior:
@@ -106,7 +134,8 @@ Currently running on a Hetzner Cloud server (CX22, 4GB RAM, Ubuntu 24.04) with C
 | **Backup** | `rclone sync` to R2 after each crawl cycle |
 | **DNS** | Cloudflare — A record `search` → server IP (DNS only, gray cloud) |
 | **TLS** | Let's Encrypt via Caddy auto-HTTPS |
-| **CI/CD** | GitHub Actions — auto-deploy `frontend/` on push to `master` |
+| **Admin API** | Key-authenticated endpoints at `/admin/*` for seed and crawl management |
+| **CI/CD** | GitHub Actions — auto-deploy frontend + backend on push to `master` |
 
 ### File Layout
 
@@ -120,6 +149,7 @@ Currently running on a Hetzner Cloud server (CX22, 4GB RAM, Ubuntu 24.04) with C
   css/styles.css                    # Styles
   js/app.js                         # Client-side logic
 /mnt/r2-slither/                    # Index + vector data directory
+  seeds.json                        # Seed URLs for crawling (managed via admin API)
   index/                            # BM25 index (docs.bin, index.bin, meta.json, terms.bin)
   vectors/                          # Semantic vectors (vectors.bin, vecmap.bin)
 /etc/caddy/Caddyfile                # Caddy reverse proxy + static file config
@@ -162,7 +192,7 @@ search.peril.lol {
     encode gzip zstd
 
     @api {
-        path /search /stats /health
+        path /search /stats /health /admin/*
     }
     reverse_proxy @api localhost:8080
 
@@ -178,12 +208,15 @@ sudo journalctl -u caddy -f        # Watch logs
 
 ### CI/CD
 
-The GitHub Actions workflow at `.github/workflows/deploy-frontend.yml` auto-deploys the `frontend/` directory to the server on every push to `master` that touches `frontend/**`.
+Two GitHub Actions workflows auto-deploy on push to `master`:
+
+- **`deploy-frontend.yml`** — SCPs `frontend/` to the server when `frontend/**` changes
+- **`deploy-backend.yml`** — Cross-compiles the binary (`x86_64-unknown-linux-gnu`), SCPs it to the server, and restarts the service when `crates/**` or `Cargo.*` change
 
 **Required GitHub secrets:**
 - `DEPLOY_HOST` — server IP
 - `DEPLOY_USER` — SSH username
-- `DEPLOY_PASSWORD` — SSH password
+- `DEPLOY_SSH_KEY` — Ed25519 private key for SSH auth
 
 ### systemd Services
 
