@@ -38,6 +38,12 @@ enum Commands {
 
         #[arg(long, default_value = "./slither_data", help = "Output data directory")]
         output_dir: String,
+
+        #[arg(long, help = "Max storage in GB (e.g. 100)")]
+        max_storage_gb: Option<f64>,
+
+        #[arg(long, default_value = "10", help = "Warning threshold in GB")]
+        warning_threshold_gb: f64,
     },
 
     #[command(about = "Search the index")]
@@ -125,12 +131,16 @@ async fn main() {
             depth,
             concurrent,
             output_dir,
+            max_storage_gb,
+            warning_threshold_gb,
         } => {
             config.crawler.max_depth = depth;
             config.crawler.max_concurrent = concurrent;
             config.data_dir = output_dir.clone();
             config.index.data_dir = format!("{output_dir}/index");
             config.embedder.data_dir = format!("{output_dir}/vectors");
+            config.storage.max_gb = max_storage_gb;
+            config.storage.warning_threshold_gb = warning_threshold_gb;
             pipeline::crawl(config, urls).await
         }
 

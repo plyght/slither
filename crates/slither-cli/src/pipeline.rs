@@ -60,10 +60,19 @@ pub async fn crawl(config: SlitherConfig, urls: Vec<String>) -> SlitherResult<()
                         }
 
                         if pages_crawled % 100 == 0 {
-                            println!(
-                                "  Crawled {} pages, indexed {} documents",
-                                pages_crawled, pages_indexed
+                            let (can_continue, status) = check_storage_limits(
+                                &config.index.data_dir,
+                                &config.embedder.data_dir,
+                                &config.storage,
                             );
+                            println!(
+                                "  Crawled {} pages, indexed {} documents | {}",
+                                pages_crawled, pages_indexed, status
+                            );
+                            if !can_continue {
+                                println!("\nStopping crawl: {}", status);
+                                break;
+                            }
                         }
                     }
                 }
@@ -205,4 +214,26 @@ fn human_bytes(bytes: u64) -> String {
     } else {
         format!("{bytes} B")
     }
+}
+
+#[cfg(unix)]
+fn check_storage_limits(index_dir: &str, vector_dir: &str, config: &slither_core::StorageConfig) -> (bool, String) {
+    let index_size = dir_size(index_dir);
+    let vector_size = dir_size(vector_dir);
+    let total_size = index_size + vector_size;
+    
+    const GB: u64 = 1024 * 1024 * 1024;
+    let total_gb = total_size as f64 / GB as f64;
+    
+    if let Some(max_gb) = config.max_gb {
+        if total_gb >= max_gb {
+            return (false, format!("Storage limit reached: {:.2}GB / {:.0}GB", total_gb, max_gb));
+        }
+    }
+    
+    if total_gb >= config.warning_threshold_gb {
+        return (true, format!("WARNING: {:.2}GB (limit: {:?}GB)", total_gb, config.max_gb));
+    }
+    
+    (true, format!("{:.2}GB", total_gb))
 }

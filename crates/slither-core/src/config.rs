@@ -5,6 +5,7 @@ pub struct SlitherConfig {
     pub crawler: CrawlerConfig,
     pub index: IndexConfig,
     pub embedder: EmbedderConfig,
+    pub storage: StorageConfig,
     pub data_dir: String,
 }
 
@@ -30,12 +31,30 @@ pub struct EmbedderConfig {
     pub data_dir: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StorageConfig {
+    pub max_gb: Option<f64>,
+    pub warning_threshold_gb: f64,
+    pub check_interval_secs: u64,
+}
+
+impl Default for StorageConfig {
+    fn default() -> Self {
+        Self {
+            max_gb: None,
+            warning_threshold_gb: 10.0,
+            check_interval_secs: 60,
+        }
+    }
+}
+
 impl Default for SlitherConfig {
     fn default() -> Self {
         Self {
             crawler: CrawlerConfig::default(),
             index: IndexConfig::default(),
             embedder: EmbedderConfig::default(),
+            storage: StorageConfig::default(),
             data_dir: "slither_data".to_string(),
         }
     }
