@@ -290,6 +290,12 @@ impl Index {
         self.seq_to_doc_id.len()
     }
 
+    pub fn lookup_doc_meta(&self, doc_id: u64) -> Option<(String, String, String)> {
+        let seq = self.doc_id_to_seq.get(&doc_id)?;
+        let stored = self.read_stored_doc(*seq).ok()?;
+        Some((stored.url, stored.title, stored.body))
+    }
+
     pub fn flush(&mut self) -> SlitherResult<()> {
         if self.seq_to_doc_id.is_empty() {
             return Ok(());

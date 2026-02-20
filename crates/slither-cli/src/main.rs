@@ -3,6 +3,7 @@ use slither_core::{SearchMode, SearchQuery, SlitherConfig};
 use tracing::error;
 
 mod pipeline;
+mod api;
 
 #[derive(Parser)]
 #[command(
@@ -44,15 +45,44 @@ enum Commands {
         #[arg(value_name = "QUERY", help = "Search query")]
         query: String,
 
-        #[arg(long, short, default_value = "10", help = "Number of results to return")]
+        #[arg(
+            long,
+            short,
+            default_value = "10",
+            help = "Number of results to return"
+        )]
         limit: usize,
 
-        #[arg(long, short, value_enum, default_value = "hybrid", help = "Search mode")]
+        #[arg(
+            long,
+            short,
+            value_enum,
+            default_value = "hybrid",
+            help = "Search mode"
+        )]
         mode: CliSearchMode,
+
+        #[arg(long, default_value = "./slither_data", help = "Data directory")]
+        output_dir: String,
     },
 
     #[command(about = "Show index statistics")]
-    Stats,
+    Stats {
+        #[arg(long, default_value = "./slither_data", help = "Data directory")]
+        output_dir: String,
+    },
+
+    #[command(about = "Start HTTP API server")]
+    Serve {
+        #[arg(long, default_value = "8080", help = "Port to listen on")]
+        port: u16,
+
+        #[arg(long, default_value = "0.0.0.0", help = "Address to bind to")]
+        host: String,
+
+        #[arg(long, default_value = "./slither_data", help = "Data directory")]
+        output_dir: String,
+    },
 
     #[command(about = "Manage configuration")]
     Config {
@@ -104,12 +134,36 @@ async fn main() {
             pipeline::crawl(config, urls).await
         }
 
-        Commands::Search { query, limit, mode } => {
+        Commands::Search {
+            query,
+            limit,
+            mode,
+            output_dir,
+        } => {
+            config.data_dir = output_dir.clone();
+            config.index.data_dir = format!("{output_dir}/index");
+            config.embedder.data_dir = format!("{output_dir}/vectors");
             let sq = SearchQuery { text: query, limit };
             pipeline::search(config, sq, mode.into()).await
         }
 
-        Commands::Stats => pipeline::stats(config).await,
+        Commands::Stats { output_dir } => {
+            config.data_dir = output_dir.clone();
+            config.index.data_dir = format!("{output_dir}/index");
+            config.embedder.data_dir = format!("{output_dir}/vectors");
+            pipeline::stats(config).await
+        }
+
+        Commands::Serve {
+            port,
+            host,
+            output_dir,
+        } => {
+            config.data_dir = output_dir.clone();
+            config.index.data_dir = format!("{output_dir}/index");
+            config.embedder.data_dir = format!("{output_dir}/vectors");
+            api::serve(config, &host, port).await
+        }
 
         Commands::Config { show, init } => pipeline::config_cmd(config, show, init).await,
     };

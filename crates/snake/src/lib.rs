@@ -26,16 +26,18 @@ impl Crawler {
         Self { config }
     }
 
-    pub async fn crawl(
-        &self,
-        seeds: Vec<String>,
-        tx: Sender<RawPage>,
-    ) -> Result<(), SlitherError> {
+    pub async fn crawl(&self, seeds: Vec<String>, tx: Sender<RawPage>) -> Result<(), SlitherError> {
         let config = &self.config;
         let n_workers = config.max_concurrent.max(1);
 
-        let fetcher = Arc::new(Fetcher::new(&config.user_agent, config.request_timeout_secs)?);
-        let robots = Arc::new(RobotsCache::new(fetcher.client.clone(), config.user_agent.clone()));
+        let fetcher = Arc::new(Fetcher::new(
+            &config.user_agent,
+            config.request_timeout_secs,
+        )?);
+        let robots = Arc::new(RobotsCache::new(
+            fetcher.client.clone(),
+            config.user_agent.clone(),
+        ));
         let rate_limiter = Arc::new(DomainRateLimiter::new(config.rate_limit_per_second)?);
         let frontier = Arc::new(Frontier::new());
 

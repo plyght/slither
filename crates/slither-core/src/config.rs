@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -70,21 +68,6 @@ impl Default for EmbedderConfig {
             model_path: "models/all-MiniLM-L6-v2.onnx".to_string(),
             dimensions: 384,
             data_dir: "slither_data/vectors".to_string(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IrisConfig {
-    pub model_path: PathBuf,
-    pub embedding_dim: usize,
-}
-
-impl Default for IrisConfig {
-    fn default() -> Self {
-        Self {
-            model_path: PathBuf::from("models/all-MiniLM-L6-v2.onnx"),
-            embedding_dim: 384,
         }
     }
 }

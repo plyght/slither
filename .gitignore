@@ -1,6 +1,12 @@
 /target
 /slither_data
+/test_data
 *.onnx
 !models/
+models/*.onnx
+models/*.json
 Cargo.lock
 .DS_Store
+*.swp
+*.swo
+*~

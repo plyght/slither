@@ -18,7 +18,7 @@
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use memmap2::Mmap;
-use slither_core::{IrisConfig, SlitherError};
+use slither_core::{EmbedderConfig, SlitherError};
 use std::fs::{File, OpenOptions};
 use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
@@ -36,19 +36,14 @@ pub(crate) struct VectorStorage {
 }
 
 impl VectorStorage {
-    /// Open (or initialise) the vector store.  The files are placed in the
-    /// same directory as `config.model_path`.
-    pub fn open(config: &IrisConfig) -> Result<Self, SlitherError> {
-        let model_dir = config
-            .model_path
-            .parent()
-            .ok_or_else(|| SlitherError::Storage("model_path has no parent directory".into()))?;
+    pub fn open(config: &EmbedderConfig) -> Result<Self, SlitherError> {
+        let data_dir = std::path::Path::new(&config.data_dir);
 
-        std::fs::create_dir_all(model_dir)?;
+        std::fs::create_dir_all(data_dir)?;
 
-        let vectors_path = model_dir.join("vectors.bin");
-        let vecmap_path = model_dir.join("vecmap.bin");
-        let dimensions = config.embedding_dim;
+        let vectors_path = data_dir.join("vectors.bin");
+        let vecmap_path = data_dir.join("vecmap.bin");
+        let dimensions = config.dimensions;
 
         let vector_count = if vectors_path.exists() {
             let count = Self::read_header(&vectors_path, dimensions)?;

@@ -4,7 +4,7 @@ mod storage;
 
 use model::EmbeddingModel;
 use parking_lot::RwLock;
-use slither_core::{IrisConfig, SlitherError};
+use slither_core::{EmbedderConfig, SlitherError};
 use storage::VectorStorage;
 
 pub struct Iris {
@@ -13,7 +13,7 @@ pub struct Iris {
 }
 
 impl Iris {
-    pub fn new(config: IrisConfig) -> Result<Self, SlitherError> {
+    pub fn new(config: EmbedderConfig) -> Result<Self, SlitherError> {
         let model = EmbeddingModel::load(&config)?;
         let storage = VectorStorage::open(&config)?;
         Ok(Self {

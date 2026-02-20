@@ -1,7 +1,7 @@
 use ndarray::Array2;
 use ort::{session::Session, value::TensorRef};
 use parking_lot::Mutex;
-use slither_core::{IrisConfig, SlitherError};
+use slither_core::{EmbedderConfig, SlitherError};
 use std::path::Path;
 use tokenizers::Tokenizer;
 use tracing::{info, warn};
@@ -29,8 +29,8 @@ impl EmbeddingModel {
     /// Download from:
     ///   https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2
     ///   Required: `all-MiniLM-L6-v2.onnx` and `tokenizer.json`
-    pub fn load(config: &IrisConfig) -> Result<Self, SlitherError> {
-        let model_path = &config.model_path;
+    pub fn load(config: &EmbedderConfig) -> Result<Self, SlitherError> {
+        let model_path = Path::new(&config.model_path);
         let model_dir = model_path.parent().unwrap_or(Path::new("."));
         let tokenizer_path = model_dir.join("tokenizer.json");
 
@@ -43,7 +43,7 @@ impl EmbeddingModel {
             );
             return Ok(Self {
                 inner: ModelInner::Fallback,
-                embedding_dim: config.embedding_dim,
+                embedding_dim: config.dimensions,
             });
         }
 
@@ -62,7 +62,7 @@ impl EmbeddingModel {
                 session: Mutex::new(session),
                 tokenizer,
             },
-            embedding_dim: config.embedding_dim,
+            embedding_dim: config.dimensions,
         })
     }
 
@@ -102,11 +102,11 @@ fn embed_onnx(
     let token_type_ids = Array2::from_shape_vec((1, seq_len), type_ids)
         .map_err(|e| SlitherError::Embedding(e.to_string()))?;
 
-    let input_ids_tensor = TensorRef::from_array_view(&input_ids)
+    let input_ids_tensor = TensorRef::from_array_view(input_ids.view())
         .map_err(|e| SlitherError::Embedding(e.to_string()))?;
-    let attention_mask_tensor = TensorRef::from_array_view(&attention_mask)
+    let attention_mask_tensor = TensorRef::from_array_view(attention_mask.view())
         .map_err(|e| SlitherError::Embedding(e.to_string()))?;
-    let token_type_ids_tensor = TensorRef::from_array_view(&token_type_ids)
+    let token_type_ids_tensor = TensorRef::from_array_view(token_type_ids.view())
         .map_err(|e| SlitherError::Embedding(e.to_string()))?;
 
     let mut guard = session.lock();

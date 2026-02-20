@@ -6,7 +6,7 @@ use slither_core::{Document, SearchMode, SearchQuery, SearchResult, SlitherResul
 use tracing::debug;
 
 pub struct Ranker {
-    index: tome::Index,
+    pub index: tome::Index,
     embedder: iris::Iris,
     doc_metadata: HashMap<u64, RankerDocMeta>,
 }
@@ -81,13 +81,31 @@ impl Ranker {
     fn hits_to_results(&self, hits: Vec<(u64, f32)>) -> Vec<SearchResult> {
         hits.into_iter()
             .map(|(doc_id, score)| {
-                let meta = self.doc_metadata.get(&doc_id);
-                SearchResult {
-                    doc_id,
-                    url: meta.map(|m| m.url.clone()).unwrap_or_default(),
-                    title: meta.map(|m| m.title.clone()).unwrap_or_default(),
-                    snippet: meta.map(|m| m.snippet.clone()).unwrap_or_default(),
-                    score,
+                if let Some(meta) = self.doc_metadata.get(&doc_id) {
+                    SearchResult {
+                        doc_id,
+                        url: meta.url.clone(),
+                        title: meta.title.clone(),
+                        snippet: meta.snippet.clone(),
+                        score,
+                    }
+                } else if let Some((url, title, body)) = self.index.lookup_doc_meta(doc_id) {
+                    let snippet: String = body.chars().take(200).collect();
+                    SearchResult {
+                        doc_id,
+                        url,
+                        title,
+                        snippet,
+                        score,
+                    }
+                } else {
+                    SearchResult {
+                        doc_id,
+                        url: String::new(),
+                        title: String::new(),
+                        snippet: String::new(),
+                        score,
+                    }
                 }
             })
             .collect()

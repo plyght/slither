@@ -2,7 +2,7 @@ use std::path::Path;
 
 use fang::{Fang, FangConfig};
 use iris::Iris;
-use slither_core::{IrisConfig, RawPage, SearchMode, SearchQuery, SlitherConfig, SlitherResult};
+use slither_core::{RawPage, SearchMode, SearchQuery, SlitherConfig, SlitherResult};
 use snake::Crawler;
 use tome::Index;
 use tracing::{info, warn};
@@ -20,11 +20,7 @@ pub async fn crawl(config: SlitherConfig, urls: Vec<String>) -> SlitherResult<()
 
     let transformer = Fang::new(FangConfig::default());
     let index = Index::open(Path::new(&config.index.data_dir))?;
-    let iris_config = IrisConfig {
-        model_path: Path::new(&config.embedder.model_path).to_path_buf(),
-        embedding_dim: config.embedder.dimensions,
-    };
-    let embedder = Iris::new(iris_config)?;
+    let embedder = Iris::new(config.embedder.clone())?;
     let mut ranker = Ranker::new(index, embedder);
 
     let snake = Crawler::new(config.crawler.clone());
@@ -79,7 +75,10 @@ pub async fn crawl(config: SlitherConfig, urls: Vec<String>) -> SlitherResult<()
     ranker.flush()?;
 
     println!("Crawl complete.");
-    println!("  Crawled {} pages, indexed {} documents", pages_crawled, pages_indexed);
+    println!(
+        "  Crawled {} pages, indexed {} documents",
+        pages_crawled, pages_indexed
+    );
 
     info!(pages_crawled, pages_indexed, "crawl pipeline finished");
 
@@ -92,11 +91,7 @@ pub async fn search(
     mode: SearchMode,
 ) -> SlitherResult<()> {
     let index = Index::open(Path::new(&config.index.data_dir))?;
-    let iris_cfg = IrisConfig {
-        model_path: Path::new(&config.embedder.model_path).to_path_buf(),
-        embedding_dim: config.embedder.dimensions,
-    };
-    let embedder = Iris::new(iris_cfg)?;
+    let embedder = Iris::new(config.embedder.clone())?;
     let ranker = Ranker::new(index, embedder);
 
     let results = ranker.search(&query, mode)?;
