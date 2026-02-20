@@ -15,6 +15,16 @@ pub fn extract_snippet(body: &str, query_tokens: &[String]) -> String {
 
     let start = match best_pos {
         Some(pos) => {
+            let pos = pos.min(body.len());
+            let pos = if body.is_char_boundary(pos) {
+                pos
+            } else {
+                body.char_indices()
+                    .map(|(i, _)| i)
+                    .take_while(|&i| i <= pos)
+                    .last()
+                    .unwrap_or(0)
+            };
             let word_start = body[..pos]
                 .rfind(|c: char| c.is_whitespace())
                 .map(|i| {
@@ -37,7 +47,10 @@ pub fn extract_snippet(body: &str, query_tokens: &[String]) -> String {
         None => 0,
     };
 
-    let end = (start + SNIPPET_LEN).min(body.len());
+    let mut end = (start + SNIPPET_LEN).min(body.len());
+    while end < body.len() && !body.is_char_boundary(end) {
+        end += 1;
+    }
 
     let raw = &body[start..end];
 
