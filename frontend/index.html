@@ -1,0 +1,1069 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#fafafa" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">
+    <title>slither</title>
+    <meta name="description" content="A fast, hybrid web search engine by plyght. BM25 + semantic search across 40,000+ indexed pages.">
+    <meta property="og:title" content="slither — search">
+    <meta property="og:description" content="A fast, hybrid web search engine by plyght.">
+    <meta property="og:type" content="website">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M100 200L150 60 200 60 150 200ZM300 200L250 60 200 60 250 200ZM175 120H225V300H175ZM80 200L320 200 280 250 120 250Z' fill='%230a0a0a' fill-rule='evenodd'/%3E%3C/svg%3E">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&family=EB+Garamond:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #fafafa;
+            --bg-secondary: #ffffff;
+            --text-primary: #0a0a0a;
+            --text-secondary: #525252;
+            --border-color: #e5e5e5;
+            --accent-color: #171717;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg-primary: #0a0a0a;
+                --bg-secondary: #141414;
+                --text-primary: #e5e5e5;
+                --text-secondary: #737373;
+                --border-color: #262626;
+                --accent-color: #e5e5e5;
+            }
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        @keyframes pageIn { from { opacity: 0 } to { opacity: 1 } }
+
+        html {
+            animation: pageIn 0.25s ease;
+        }
+
+        body {
+            font-family: 'STIX Two Text', 'Times New Roman', serif;
+            color: var(--text-primary);
+            background: var(--bg-primary);
+            line-height: 1.6;
+            font-size: 17px;
+            text-rendering: optimizeLegibility;
+            font-kerning: normal;
+            font-variant-ligatures: common-ligatures;
+            min-height: 100vh;
+            min-height: 100dvh;
+            overflow-x: hidden;
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(var(--border-color) 1px, transparent 1px),
+                linear-gradient(90deg, var(--border-color) 1px, transparent 1px);
+            background-size: 24px 24px;
+            opacity: 0.08;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        ::selection {
+            background: var(--text-primary);
+            color: var(--bg-primary);
+        }
+
+        a {
+            color: inherit;
+            text-decoration: underline;
+            text-decoration-style: dotted;
+            text-decoration-thickness: 0.06em;
+            text-underline-offset: 2px;
+            transition: all 0.2s ease;
+        }
+
+        a:hover {
+            color: var(--text-primary);
+            text-decoration-style: solid;
+        }
+
+        .app {
+            position: relative;
+            z-index: 1;
+            min-height: 100vh;
+            min-height: 100dvh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .content-wrap {
+            width: 100%;
+            max-width: 720px;
+            margin: 0 auto;
+            padding: 0 2rem;
+            padding-top: 32vh;
+            transition: padding-top 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        body[data-state="results"] .content-wrap {
+            padding-top: 52px;
+        }
+
+        .brand {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 32px;
+            transition: margin-bottom 0.4s ease;
+        }
+
+        body[data-state="results"] .brand {
+            flex-direction: row;
+            align-items: baseline;
+            gap: 10px;
+            margin-bottom: 28px;
+            cursor: pointer;
+        }
+
+        .brand-mark {
+            width: 42px;
+            height: 42px;
+            color: var(--text-primary);
+            transition: width 0.4s ease, height 0.4s ease;
+            flex-shrink: 0;
+        }
+
+        body[data-state="results"] .brand-mark {
+            width: 22px;
+            height: 22px;
+            transform: translateY(2px);
+        }
+
+        .brand-title {
+            font-family: 'EB Garamond', serif;
+            font-size: 3.2rem;
+            font-weight: 400;
+            letter-spacing: -0.02em;
+            line-height: 1.1;
+            cursor: default;
+            transition: font-size 0.4s ease;
+            position: relative;
+        }
+
+        .brand-title.scrambling {
+            filter: blur(0.8px);
+        }
+
+        body[data-state="results"] .brand-title {
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
+
+        .brand-tagline {
+            font-family: 'EB Garamond', serif;
+            font-size: 0.95rem;
+            font-style: italic;
+            color: var(--text-secondary);
+            text-align: center;
+            transition: opacity 0.3s ease, max-height 0.3s ease;
+            overflow: hidden;
+        }
+
+        body[data-state="results"] .brand-tagline {
+            opacity: 0;
+            max-height: 0;
+            margin: 0;
+            pointer-events: none;
+        }
+
+        .search-form {
+            margin-bottom: 16px;
+        }
+
+        .search-field {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+
+        .search-input {
+            width: 100%;
+            font-family: 'STIX Two Text', serif;
+            font-size: 1.15rem;
+            color: var(--text-primary);
+            background: transparent;
+            border: none;
+            border-bottom: 0.5px solid var(--border-color);
+            padding: 12px 40px 12px 0;
+            outline: none;
+            transition: border-color 0.2s ease;
+            font-variant-numeric: oldstyle-nums proportional-nums;
+        }
+
+        .search-input::placeholder {
+            color: var(--text-secondary);
+            opacity: 0.6;
+            font-style: italic;
+        }
+
+        .search-input:focus {
+            border-bottom-color: var(--text-secondary);
+        }
+
+        @keyframes searchPulse {
+            0%, 100% { border-bottom-color: var(--border-color); }
+            50% { border-bottom-color: var(--text-secondary); }
+        }
+
+        .search-input.loading {
+            animation: searchPulse 1.2s ease infinite;
+        }
+
+        .search-submit {
+            position: absolute;
+            right: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            padding: 8px;
+            cursor: pointer;
+            color: var(--text-secondary);
+            transition: color 0.2s ease;
+            display: flex;
+            align-items: center;
+        }
+
+        .search-submit:hover {
+            color: var(--text-primary);
+        }
+
+        .search-submit svg {
+            width: 18px;
+            height: 18px;
+        }
+
+        .search-modes {
+            display: flex;
+            align-items: center;
+            gap: 0;
+            margin-top: 12px;
+            justify-content: center;
+            transition: justify-content 0s;
+        }
+
+        body[data-state="results"] .search-modes {
+            justify-content: flex-start;
+        }
+
+        .mode-btn {
+            font-family: 'STIX Two Text', serif;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            background: none;
+            border: none;
+            padding: 2px 10px;
+            cursor: pointer;
+            text-decoration: underline;
+            text-decoration-style: dotted;
+            text-decoration-thickness: 0.06em;
+            text-underline-offset: 2px;
+            transition: all 0.2s ease;
+            border-right: 0.5px solid var(--border-color);
+        }
+
+        .mode-btn:first-child {
+            padding-left: 0;
+        }
+
+        .mode-btn:last-child {
+            border-right: none;
+        }
+
+        .mode-btn:hover {
+            color: var(--text-primary);
+        }
+
+        .mode-btn.active {
+            color: var(--text-primary);
+            text-decoration-style: solid;
+        }
+
+        .kbd-hint {
+            text-align: center;
+            margin-top: 40px;
+            font-size: 0.82rem;
+            color: var(--text-secondary);
+            opacity: 0.5;
+            transition: opacity 0.3s ease;
+        }
+
+        body[data-state="results"] .kbd-hint {
+            display: none;
+        }
+
+        .kbd-hint kbd {
+            font-family: ui-monospace, 'SFMono-Regular', 'Courier New', monospace;
+            font-size: 0.78rem;
+            padding: 1px 6px;
+            border: 0.5px solid var(--border-color);
+            border-radius: 3px;
+            background: var(--bg-secondary);
+        }
+
+        .results-section {
+            flex: 1;
+            max-width: 720px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 0 2rem 80px;
+            display: none;
+        }
+
+        body[data-state="results"] .results-section {
+            display: block;
+        }
+
+        .results-ornament {
+            display: block;
+            width: 60px;
+            height: 12px;
+            margin: 0 0 24px;
+            position: relative;
+        }
+
+        .results-ornament::before {
+            content: '\2014';
+            font-size: 1rem;
+            color: var(--text-secondary);
+            letter-spacing: 0.3em;
+        }
+
+        .results-meta {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+            font-variant-numeric: lining-nums;
+        }
+
+        .results-meta .meta-mode {
+            font-family: ui-monospace, 'SFMono-Regular', 'Courier New', monospace;
+            font-size: 0.78rem;
+        }
+
+        .results-list {
+            counter-reset: result;
+        }
+
+        .result {
+            margin: 28px 0;
+            padding-left: 2.2em;
+            position: relative;
+            counter-increment: result;
+            opacity: 0;
+            transform: translateY(10px);
+            animation: resultIn 0.35s ease forwards;
+            animation-delay: calc(var(--i, 0) * 55ms);
+        }
+
+        @keyframes resultIn {
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .result-rank {
+            position: absolute;
+            left: 0;
+            top: 0;
+            font-variant-numeric: lining-nums;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .result-title {
+            font-family: 'EB Garamond', serif;
+            font-size: 1.15rem;
+            font-weight: 400;
+            display: inline;
+        }
+
+        .result-url {
+            display: block;
+            font-family: ui-monospace, 'SFMono-Regular', 'Courier New', monospace;
+            font-size: 0.78rem;
+            font-style: normal;
+            color: var(--text-secondary);
+            margin: 2px 0 6px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .result-snippet {
+            font-size: 0.95rem;
+            color: var(--text-secondary);
+            line-height: 1.55;
+            text-align: justify;
+            hyphens: auto;
+        }
+
+        .result-snippet mark {
+            background: transparent;
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+
+        .result-score {
+            font-family: ui-monospace, 'SFMono-Regular', 'Courier New', monospace;
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+            opacity: 0.5;
+            margin-top: 4px;
+        }
+
+        .no-results {
+            font-style: italic;
+            color: var(--text-secondary);
+            margin-top: 40px;
+            text-align: center;
+        }
+
+        .error-msg {
+            color: var(--text-secondary);
+            margin-top: 40px;
+            text-align: center;
+        }
+
+        .error-msg p {
+            font-style: italic;
+            margin-bottom: 12px;
+        }
+
+        .retry-btn {
+            font-family: 'STIX Two Text', serif;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            background: none;
+            border: none;
+            cursor: pointer;
+            text-decoration: underline;
+            text-decoration-style: dotted;
+            text-decoration-thickness: 0.06em;
+            text-underline-offset: 2px;
+            transition: all 0.2s ease;
+        }
+
+        .retry-btn:hover {
+            color: var(--text-primary);
+            text-decoration-style: solid;
+        }
+
+        .site-footer {
+            width: 100%;
+            max-width: 720px;
+            margin: auto auto 0;
+            padding: 24px 2rem 28px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        body[data-state="results"] .site-footer {
+            margin-top: 0;
+        }
+
+        .footer-credit {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            font-size: 0.82rem;
+            color: var(--text-secondary);
+            opacity: 0.5;
+            transition: opacity 0.2s ease;
+        }
+
+        .footer-credit:hover {
+            opacity: 0.8;
+        }
+
+        .footer-mark {
+            width: 14px;
+            height: 14px;
+            color: var(--text-secondary);
+        }
+
+        .footer-flag {
+            height: 10px;
+            width: auto;
+            color: var(--text-secondary);
+            opacity: 0.6;
+        }
+
+        .palette-btn {
+            background: none;
+            border: none;
+            padding: 8px;
+            cursor: pointer;
+            color: var(--text-secondary);
+            opacity: 0.5;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+        }
+
+        .palette-btn:hover {
+            opacity: 1;
+            color: var(--text-primary);
+        }
+
+        .palette-btn svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        @media (max-width: 768px) {
+            body::before {
+                background-size: 18px 18px;
+                opacity: 0.05;
+            }
+
+            .content-wrap {
+                padding: 0 1.5rem;
+                padding-top: 28vh;
+            }
+
+            body[data-state="results"] .content-wrap {
+                padding-top: 32px;
+            }
+
+            .brand-mark {
+                width: 32px;
+                height: 32px;
+            }
+
+            body[data-state="results"] .brand-mark {
+                width: 18px;
+                height: 18px;
+            }
+
+            .brand-title {
+                font-size: 2.2rem;
+            }
+
+            body[data-state="results"] .brand-title {
+                font-size: 1.25rem;
+            }
+
+            .search-input {
+                font-size: 1rem;
+            }
+
+            .results-section {
+                padding: 0 1.5rem 60px;
+            }
+
+            .result {
+                padding-left: 0;
+            }
+
+            .result-rank {
+                display: none;
+            }
+
+            .kbd-hint {
+                display: none;
+            }
+
+            .site-footer {
+                padding: 20px 1.5rem;
+            }
+        }
+
+        @media print {
+            body::before { display: none; }
+            .palette-btn, .kbd-hint, .search-modes { display: none; }
+            .content-wrap { padding-top: 20px; }
+            .result { break-inside: avoid; opacity: 1; transform: none; animation: none; }
+        }
+    </style>
+</head>
+<body data-state="home">
+    <div class="app">
+        <div class="content-wrap">
+            <div class="brand" id="brand">
+                <svg class="brand-mark" viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg" aria-label="plyght">
+                    <path d="M100 200L150 60 200 60 150 200ZM300 200L250 60 200 60 250 200ZM175 120H225V300H175ZM80 200L320 200 280 250 120 250Z" fill="currentColor" fill-rule="evenodd"/>
+                </svg>
+                <h1 class="brand-title" id="brandTitle">slither</h1>
+                <p class="brand-tagline" id="brandTagline"><em>loading index&hellip;</em></p>
+            </div>
+
+            <form class="search-form" id="searchForm" role="search" action="#">
+                <div class="search-field">
+                    <input
+                        type="search"
+                        class="search-input"
+                        id="searchInput"
+                        placeholder="Search the web&hellip;"
+                        autocomplete="off"
+                        autofocus
+                        aria-label="Search query"
+                    >
+                    <button type="submit" class="search-submit" aria-label="Search">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="5" y1="12" x2="19" y2="12"/>
+                            <polyline points="12 5 19 12 12 19"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="search-modes" id="searchModes">
+                    <button type="button" class="mode-btn active" data-mode="hybrid">hybrid</button>
+                    <button type="button" class="mode-btn" data-mode="text">text</button>
+                    <button type="button" class="mode-btn" data-mode="semantic">semantic</button>
+                </div>
+            </form>
+
+            <div class="kbd-hint">Press <kbd>/</kbd> to search</div>
+        </div>
+
+        <main class="results-section" id="resultsSection" aria-live="polite">
+            <div class="results-ornament"></div>
+            <div class="results-meta" id="resultsMeta"></div>
+            <div class="results-list" id="resultsList"></div>
+        </main>
+
+        <footer class="site-footer">
+            <a href="https://peril.lol" class="footer-credit" style="text-decoration:none">
+                <svg class="footer-mark" viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M100 200L150 60 200 60 150 200ZM300 200L250 60 200 60 250 200ZM175 120H225V300H175ZM80 200L320 200 280 250 120 250Z" fill="currentColor" fill-rule="evenodd"/>
+                </svg>
+                <span>a plyght project</span>
+                <svg class="footer-flag" viewBox="0 0 1235 650" xmlns="http://www.w3.org/2000/svg">
+                    <rect fill="currentColor" width="1235" height="650"/>
+                    <path d="M0,75 L1235,75 M1235,175 L0,175 M0,275 L1235,275 M1235,375 L0,375 M0,475 L1235,475 M1235,575 L0,575" stroke="var(--bg-primary)" stroke-width="50" fill="currentColor"/>
+                    <rect fill="currentColor" width="494" height="350"/>
+                    <path d="M147,195 L197,55 L247,55 L197,195Z M347,195 L297,55 L247,55 L297,195Z M222,115 L272,115 L272,295 L222,295Z M127,195 L367,195 L327,245 L167,245Z" fill="var(--bg-primary)"/>
+                </svg>
+            </a>
+            <button class="palette-btn" id="paletteBtn" aria-label="Change color scheme">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/>
+                    <circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/>
+                    <circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/>
+                    <circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/>
+                    <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/>
+                </svg>
+            </button>
+        </footer>
+    </div>
+
+    <script>
+    (function () {
+        'use strict';
+
+        var API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+            ? 'http://REDACTED_SERVER_IP:8080'
+            : '';
+        var currentMode = 'hybrid';
+        var currentController = null;
+        var docCount = null;
+
+        var body = document.body;
+        var searchInput = document.getElementById('searchInput');
+        var searchForm = document.getElementById('searchForm');
+        var resultsList = document.getElementById('resultsList');
+        var resultsMeta = document.getElementById('resultsMeta');
+        var resultsSection = document.getElementById('resultsSection');
+        var brandTitle = document.getElementById('brandTitle');
+        var brandTagline = document.getElementById('brandTagline');
+        var brand = document.getElementById('brand');
+        var modeButtons = document.querySelectorAll('.mode-btn');
+        var paletteBtn = document.getElementById('paletteBtn');
+
+        function setState(state) {
+            body.setAttribute('data-state', state);
+        }
+
+        function formatNumber(n) {
+            return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+        }
+
+        function extractDomain(url) {
+            try {
+                var u = new URL(url);
+                return u.hostname.replace(/^www\./, '') + (u.pathname.length > 1 ? u.pathname : '');
+            } catch (e) {
+                return url;
+            }
+        }
+
+        function highlightTerms(text, query) {
+            if (!query || !text) return escapeHtml(text || '');
+            var words = query.split(/\s+/).filter(function (w) { return w.length > 2; });
+            if (words.length === 0) return escapeHtml(text);
+            var escaped = escapeHtml(text);
+            words.forEach(function (word) {
+                var re = new RegExp('(' + word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+                escaped = escaped.replace(re, '<mark>$1</mark>');
+            });
+            return escaped;
+        }
+
+        function escapeHtml(str) {
+            var el = document.createElement('span');
+            el.textContent = str;
+            return el.innerHTML;
+        }
+
+        function truncateSnippet(text, maxLen) {
+            if (!text) return '';
+            if (text.length <= maxLen) return text;
+            return text.substring(0, maxLen).replace(/\s+\S*$/, '') + '\u2026';
+        }
+
+        function fetchStats() {
+            fetch(API_BASE + '/stats')
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (data.success && data.data) {
+                        docCount = data.data.documents;
+                        brandTagline.innerHTML = formatNumber(docCount) + ' pages indexed &middot; hybrid search';
+                    }
+                })
+                .catch(function () {
+                    brandTagline.innerHTML = 'hybrid search engine';
+                });
+        }
+
+        function doSearch(query, mode, pushState) {
+            if (!query.trim()) return;
+
+            if (currentController) {
+                currentController.abort();
+            }
+            currentController = new AbortController();
+
+            setState('results');
+            searchInput.classList.add('loading');
+            resultsList.innerHTML = '';
+            resultsMeta.textContent = '';
+
+            var startTime = performance.now();
+            var params = '?q=' + encodeURIComponent(query.trim()) + '&limit=20&mode=' + mode;
+
+            if (pushState) {
+                var newUrl = window.location.pathname + '?q=' + encodeURIComponent(query.trim()) + '&mode=' + mode;
+                history.pushState({ q: query, mode: mode }, '', newUrl);
+            }
+
+            document.title = query.trim() + ' \u2014 slither';
+
+            fetch(API_BASE + '/search' + params, { signal: currentController.signal })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    searchInput.classList.remove('loading');
+                    var elapsed = ((performance.now() - startTime) / 1000).toFixed(2);
+
+                    if (!data.success) {
+                        resultsMeta.textContent = '';
+                        resultsList.innerHTML = '<div class="error-msg"><p>' + escapeHtml(data.error || 'Search failed.') + '</p><button class="retry-btn" onclick="window.__retry()">Try again</button></div>';
+                        return;
+                    }
+
+                    var results = data.data || [];
+
+                    if (results.length === 0) {
+                        resultsMeta.innerHTML = 'No results &middot; <span class="meta-mode">' + mode + '</span> &middot; ' + elapsed + 's';
+                        resultsList.innerHTML = '<p class="no-results">No results found for \u201c' + escapeHtml(query) + '\u201d</p>';
+                        return;
+                    }
+
+                    resultsMeta.innerHTML = results.length + ' result' + (results.length !== 1 ? 's' : '') +
+                        ' &middot; <span class="meta-mode">' + mode + '</span> &middot; ' + elapsed + 's';
+
+                    var html = '';
+                    results.forEach(function (r, i) {
+                        html += '<article class="result" style="--i:' + i + '">' +
+                            '<span class="result-rank">[' + (i + 1) + ']</span>' +
+                            '<div class="result-body">' +
+                            '<h3><a href="' + escapeHtml(r.url) + '" class="result-title">' + escapeHtml(r.title || 'Untitled') + '</a></h3>' +
+                            '<cite class="result-url">' + escapeHtml(extractDomain(r.url)) + '</cite>' +
+                            '<p class="result-snippet">' + highlightTerms(truncateSnippet(r.snippet, 280), query) + '</p>' +
+                            '<span class="result-score">' + r.score.toFixed(4) + '</span>' +
+                            '</div></article>';
+                    });
+                    resultsList.innerHTML = html;
+                })
+                .catch(function (err) {
+                    searchInput.classList.remove('loading');
+                    if (err.name === 'AbortError') return;
+                    resultsMeta.textContent = '';
+                    resultsList.innerHTML = '<div class="error-msg"><p>Could not reach the search index.</p><button class="retry-btn" onclick="window.__retry()">Try again</button></div>';
+                });
+        }
+
+        window.__retry = function () {
+            doSearch(searchInput.value, currentMode, false);
+        };
+
+        function goHome() {
+            setState('home');
+            searchInput.value = '';
+            resultsList.innerHTML = '';
+            resultsMeta.textContent = '';
+            searchInput.focus();
+            document.title = 'slither';
+            history.pushState({}, '', window.location.pathname);
+        }
+
+        searchForm.addEventListener('submit', function (e) {
+            e.preventDefault();
+            doSearch(searchInput.value, currentMode, true);
+        });
+
+        modeButtons.forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                modeButtons.forEach(function (b) { b.classList.remove('active'); });
+                btn.classList.add('active');
+                currentMode = btn.getAttribute('data-mode');
+                if (body.getAttribute('data-state') === 'results' && searchInput.value.trim()) {
+                    doSearch(searchInput.value, currentMode, true);
+                }
+            });
+        });
+
+        brand.addEventListener('click', function () {
+            if (body.getAttribute('data-state') === 'results') {
+                goHome();
+            }
+        });
+
+        document.addEventListener('keydown', function (e) {
+            if (e.key === '/' && document.activeElement !== searchInput) {
+                e.preventDefault();
+                searchInput.focus();
+            }
+            if (e.key === 'Escape') {
+                if (body.getAttribute('data-state') === 'results') {
+                    goHome();
+                } else {
+                    searchInput.blur();
+                }
+            }
+        });
+
+        window.addEventListener('popstate', function () {
+            var params = new URLSearchParams(window.location.search);
+            var q = params.get('q');
+            var mode = params.get('mode') || 'hybrid';
+            if (q) {
+                searchInput.value = q;
+                currentMode = mode;
+                modeButtons.forEach(function (b) {
+                    b.classList.toggle('active', b.getAttribute('data-mode') === mode);
+                });
+                doSearch(q, mode, false);
+            } else {
+                goHome();
+            }
+        });
+
+        var titleOriginal = 'slither';
+        var titleChars = 'abcdefghijklmnopqrstuvwxyz';
+        var titleAnimating = false;
+
+        function scrambleText(text, progress, seed) {
+            return text.split('').map(function (ch, i) {
+                var cp = progress - (i * 0.6);
+                if (cp >= 2.5) return text[i];
+                var idx = Math.floor((seed + i * (cp > 0 ? 3 : 5)) * (cp > 0 ? 7 : 11)) % titleChars.length;
+                return ch === ' ' ? ' ' : titleChars[idx];
+            }).join('');
+        }
+
+        function animateScramble(targetText) {
+            var start = performance.now();
+            var duration = 900;
+            var seed = 0;
+            var lastSeedUpdate = 0;
+            brandTitle.classList.add('scrambling');
+
+            function step(now) {
+                var elapsed = now - start;
+                var progress = (elapsed / duration) * targetText.length * 0.6;
+                if (now - lastSeedUpdate > 42) {
+                    seed = Math.random();
+                    lastSeedUpdate = now;
+                }
+                brandTitle.textContent = scrambleText(targetText, progress, seed);
+                if (elapsed < duration) {
+                    requestAnimationFrame(step);
+                } else {
+                    brandTitle.textContent = targetText;
+                    setTimeout(function () {
+                        brandTitle.classList.remove('scrambling');
+                        titleAnimating = false;
+                    }, 80);
+                }
+            }
+            requestAnimationFrame(step);
+        }
+
+        brandTitle.addEventListener('mouseenter', function () {
+            if (titleAnimating) return;
+            titleAnimating = true;
+            var targets = ['slither', 'sl1th3r', 'sssss'];
+            var available = targets.filter(function (t) { return t !== brandTitle.textContent; });
+            animateScramble(available[Math.floor(Math.random() * available.length)]);
+        });
+
+        var colorGen = {
+            harmonies: ['monochromatic', 'analogous', 'complementary', 'triadic', 'split-complementary'],
+            currentScheme: null,
+
+            oklchToRgb: function (l, c, h) {
+                var a = c * Math.cos(h * Math.PI / 180);
+                var b = c * Math.sin(h * Math.PI / 180);
+                var L = l + 0.3963377774 * a + 0.2158037573 * b;
+                var M = l - 0.1055613458 * a - 0.0638541728 * b;
+                var S = l - 0.0894841775 * a - 1.2914855480 * b;
+                var l_ = L * L * L, m_ = M * M * M, s_ = S * S * S;
+                var r = +4.0767416621 * l_ - 3.3077115913 * m_ + 0.2309699292 * s_;
+                var g = -1.2684380046 * l_ + 2.6097574011 * m_ - 0.3413193965 * s_;
+                var bv = -0.0041960863 * l_ - 0.7034186147 * m_ + 1.7076147010 * s_;
+                r = Math.max(0, Math.min(1, r));
+                g = Math.max(0, Math.min(1, g));
+                bv = Math.max(0, Math.min(1, bv));
+                var toSrgb = function (v) { return v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(v, 1 / 2.4) - 0.055; };
+                r = toSrgb(r); g = toSrgb(g); bv = toSrgb(bv);
+                var toHex = function (v) { return Math.round(Math.max(0, Math.min(255, v * 255))).toString(16).padStart(2, '0'); };
+                return '#' + toHex(r) + toHex(g) + toHex(bv);
+            },
+
+            getLuminance: function (l, c, h) {
+                var a = c * Math.cos(h * Math.PI / 180);
+                var b = c * Math.sin(h * Math.PI / 180);
+                var L = l + 0.3963377774 * a + 0.2158037573 * b;
+                var M = l - 0.1055613458 * a - 0.0638541728 * b;
+                var S = l - 0.0894841775 * a - 1.2914855480 * b;
+                var l_ = L * L * L, m_ = M * M * M, s_ = S * S * S;
+                var r = Math.max(0, Math.min(1, +4.0767416621 * l_ - 3.3077115913 * m_ + 0.2309699292 * s_));
+                var g = Math.max(0, Math.min(1, -1.2684380046 * l_ + 2.6097574011 * m_ - 0.3413193965 * s_));
+                var bv = Math.max(0, Math.min(1, -0.0041960863 * l_ - 0.7034186147 * m_ + 1.7076147010 * s_));
+                var toLinear = function (v) { return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+                var toS = function (v) { return v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(v, 1 / 2.4) - 0.055; };
+                return 0.2126 * toLinear(toS(r)) + 0.7152 * toLinear(toS(g)) + 0.0722 * toLinear(toS(bv));
+            },
+
+            getContrast: function (c1, c2) {
+                var l1 = this.getLuminance(c1.l, c1.c, c1.h);
+                var l2 = this.getLuminance(c2.l, c2.c, c2.h);
+                return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+            },
+
+            ensureContrast: function (bg, text, min) {
+                var t = { l: text.l, c: text.c, h: text.h };
+                if (this.getContrast(bg, t) >= min) return t;
+                var step = bg.l > 0.5 ? -0.05 : 0.05;
+                for (var i = 0; i < 20; i++) {
+                    t.l = Math.max(0, Math.min(1, t.l + step));
+                    if (this.getContrast(bg, t) >= min) break;
+                }
+                return t;
+            },
+
+            generate: function () {
+                var baseHue = Math.floor(Math.random() * 360);
+                var harmony = this.harmonies[Math.floor(Math.random() * this.harmonies.length)];
+                var hues;
+                switch (harmony) {
+                    case 'monochromatic': hues = [baseHue, baseHue, baseHue]; break;
+                    case 'analogous': hues = [baseHue, (baseHue + 30) % 360, (baseHue + 330) % 360]; break;
+                    case 'complementary': hues = [baseHue, (baseHue + 180) % 360, baseHue]; break;
+                    case 'triadic': hues = [baseHue, (baseHue + 120) % 360, (baseHue + 240) % 360]; break;
+                    default: hues = [baseHue, (baseHue + 150) % 360, (baseHue + 210) % 360]; break;
+                }
+                var bc = 0.03 + Math.random() * 0.06;
+                return {
+                    light: {
+                        bgPrimary: { l: 0.97, c: bc * 0.3, h: hues[0] },
+                        bgSecondary: { l: 0.99, c: bc * 0.2, h: hues[0] },
+                        textPrimary: this.ensureContrast({ l: 0.97, c: bc * 0.3, h: hues[0] }, { l: 0.25, c: bc * 2, h: hues[1] }, 7),
+                        textSecondary: this.ensureContrast({ l: 0.97, c: bc * 0.3, h: hues[0] }, { l: 0.50, c: bc * 1.5, h: hues[1] }, 4.5),
+                        borderColor: { l: 0.88, c: bc * 0.6, h: hues[0] },
+                        accentColor: this.ensureContrast({ l: 0.97, c: bc * 0.3, h: hues[0] }, { l: 0.30, c: bc * 2.5, h: hues[2] }, 4.5)
+                    },
+                    dark: {
+                        bgPrimary: { l: 0.18, c: bc * 0.6, h: hues[0] },
+                        bgSecondary: { l: 0.23, c: bc * 0.5, h: hues[0] },
+                        textPrimary: this.ensureContrast({ l: 0.18, c: bc * 0.6, h: hues[0] }, { l: 0.92, c: bc * 0.8, h: hues[1] }, 7),
+                        textSecondary: this.ensureContrast({ l: 0.18, c: bc * 0.6, h: hues[0] }, { l: 0.68, c: bc * 1.2, h: hues[1] }, 4.5),
+                        borderColor: { l: 0.32, c: bc * 0.8, h: hues[0] },
+                        accentColor: this.ensureContrast({ l: 0.18, c: bc * 0.6, h: hues[0] }, { l: 0.82, c: bc * 1.5, h: hues[2] }, 4.5)
+                    }
+                };
+            },
+
+            apply: function (scheme) {
+                var root = document.documentElement;
+                var isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                var colors = isDark ? scheme.dark : scheme.light;
+                var self = this;
+                var setColor = function (prop, color) {
+                    root.style.setProperty(prop, 'oklch(' + color.l + ' ' + color.c + ' ' + color.h + ')');
+                };
+                setColor('--bg-primary', colors.bgPrimary);
+                setColor('--bg-secondary', colors.bgSecondary);
+                setColor('--text-primary', colors.textPrimary);
+                setColor('--text-secondary', colors.textSecondary);
+                setColor('--border-color', colors.borderColor);
+                setColor('--accent-color', colors.accentColor);
+                this.currentScheme = scheme;
+            },
+
+            reset: function () {
+                var root = document.documentElement;
+                ['--bg-primary', '--bg-secondary', '--text-primary', '--text-secondary', '--border-color', '--accent-color'].forEach(function (p) {
+                    root.style.removeProperty(p);
+                });
+                this.currentScheme = null;
+            }
+        };
+
+        paletteBtn.addEventListener('click', function () {
+            colorGen.apply(colorGen.generate());
+        });
+
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function () {
+            if (colorGen.currentScheme) {
+                colorGen.apply(colorGen.currentScheme);
+            }
+        });
+
+        function init() {
+            fetchStats();
+
+            var params = new URLSearchParams(window.location.search);
+            var q = params.get('q');
+            var mode = params.get('mode') || 'hybrid';
+
+            if (q) {
+                searchInput.value = q;
+                currentMode = mode;
+                modeButtons.forEach(function (b) {
+                    b.classList.toggle('active', b.getAttribute('data-mode') === mode);
+                });
+                doSearch(q, mode, false);
+            }
+        }
+
+        init();
+    })();
+    </script>
+</body>
+</html>

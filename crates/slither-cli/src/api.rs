@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
+use tower_http::services::{ServeDir, ServeFile};
 use slither_core::{SearchMode, SearchQuery, SearchResult, SlitherConfig, SlitherError, SlitherResult};
 use venom::Ranker;
 use tome::Index;
@@ -87,12 +88,24 @@ pub async fn serve(config: SlitherConfig, host: &str, port: u16) -> SlitherResul
         .allow_methods(Any)
         .allow_headers(Any);
 
-    let app = Router::new()
+    let static_dir = format!("{}/static", config.data_dir);
+    std::fs::create_dir_all(&static_dir).ok();
+    let index_file = format!("{}/index.html", static_dir);
+
+    let api = Router::new()
         .route("/search", get(search_handler))
         .route("/stats", get(stats_handler))
         .route("/health", get(health_handler))
         .layer(cors)
         .with_state(shared_rankers);
+
+    let app = if std::path::Path::new(&index_file).exists() {
+        let serve_dir = ServeDir::new(&static_dir)
+            .not_found_service(ServeFile::new(&index_file));
+        api.fallback_service(serve_dir)
+    } else {
+        api
+    };
 
     let addr: SocketAddr = format!("{}:{}", host, port).parse()
         .map_err(|e| SlitherError::Io(std::io::Error::new(std::io::ErrorKind::InvalidInput, e)))?;
@@ -102,6 +115,11 @@ pub async fn serve(config: SlitherConfig, host: &str, port: u16) -> SlitherResul
     println!("  GET /search?q=<query>&limit=<n>&mode=<text|semantic|hybrid>");
     println!("  GET /stats");
     println!("  GET /health");
+    if std::path::Path::new(&index_file).exists() {
+        println!("  Static files: {}", static_dir);
+    } else {
+        println!("  (no static dir at {} — API only)", static_dir);
+    }
 
     axum::serve(listener, app).await?;
 
