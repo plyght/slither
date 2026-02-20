@@ -83,32 +83,26 @@ impl Ranker {
 
     fn hits_to_results(&self, hits: Vec<(u64, f32)>) -> Vec<SearchResult> {
         hits.into_iter()
-            .map(|(doc_id, score)| {
+            .filter_map(|(doc_id, score)| {
                 if let Some(meta) = self.doc_metadata.get(&doc_id) {
-                    SearchResult {
+                    Some(SearchResult {
                         doc_id,
                         url: meta.url.clone(),
                         title: meta.title.clone(),
                         snippet: meta.snippet.clone(),
                         score,
-                    }
+                    })
                 } else if let Some((url, title, body)) = self.index.lookup_doc_meta(doc_id) {
                     let snippet: String = body.chars().take(200).collect();
-                    SearchResult {
+                    Some(SearchResult {
                         doc_id,
                         url,
                         title,
                         snippet,
                         score,
-                    }
+                    })
                 } else {
-                    SearchResult {
-                        doc_id,
-                        url: String::new(),
-                        title: String::new(),
-                        snippet: String::new(),
-                        score,
-                    }
+                    None
                 }
             })
             .collect()
