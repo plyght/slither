@@ -90,6 +90,59 @@ Configuration is searched in: CLI path -> `slither.json` -> defaults.
 - `venom`: Hybrid search fusion combining text and semantic scores
 - `slither-core`: Shared types, configuration, and error handling
 
+## Production Deployment
+
+Currently running on a Hetzner Cloud server (CX22, 4GB RAM, Ubuntu 24.04) with Cloudflare R2 for durable backup.
+
+### Infrastructure
+
+| Component | Details |
+|-----------|---------|
+| **Server** | Hetzner CX22 (2 vCPU, 4GB RAM, 40GB disk) |
+| **Storage** | Local disk + Cloudflare R2 bucket (`slither`) |
+| **API** | `http://<server-ip>:8080` via systemd |
+| **Crawl** | Automated every 2 hours via systemd timer |
+| **Backup** | `rclone sync` to R2 after each crawl cycle |
+
+### File Layout
+
+```
+/usr/local/bin/slither              # Binary
+/usr/local/bin/slither-crawl-loop   # Crawl automation script
+/home/nico/slither/slither.json     # Config
+/home/nico/slither/models/          # ONNX model files
+/mnt/r2-slither/                    # Index + vector data directory
+  index/                            # BM25 index (docs.bin, index.bin, meta.json, terms.bin)
+  vectors/                          # Semantic vectors (vectors.bin, vecmap.bin)
+```
+
+### systemd Services
+
+**`slither-serve.service`** — API server with auto-restart:
+```bash
+systemctl status slither-serve
+```
+
+**`slither-crawl-job.timer`** — crawl every 2 hours across 29 seed URLs in 3 batches (news, docs, research), with 30-minute timeout per batch. After each cycle: sync to R2, restart serve to pick up new data.
+```bash
+systemctl status slither-crawl-job.timer
+journalctl -u slither-crawl-job.service -f  # watch crawl logs
+```
+
+### Setup from Scratch
+
+```bash
+# On a fresh Ubuntu server:
+bash scripts/setup-hetzner.sh
+
+# Configure rclone for R2:
+rclone config  # add r2 remote with Cloudflare S3-compatible credentials
+
+# Install systemd units and crawl script, then:
+sudo systemctl enable --now slither-serve
+sudo systemctl enable --now slither-crawl-job.timer
+```
+
 ## Development
 
 ```bash

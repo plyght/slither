@@ -48,8 +48,33 @@ pub async fn run(ctx: WorkerContext) {
     info!("worker {} finished", ctx.id);
 }
 
+const SKIP_EXTENSIONS: &[&str] = &[
+    ".tar.gz", ".tgz", ".tar.bz2", ".tar.xz", ".gz", ".bz2", ".xz",
+    ".zip", ".rar", ".7z",
+    ".msi", ".exe", ".dmg", ".pkg", ".deb", ".rpm", ".appimage",
+    ".iso", ".img",
+    ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".ico", ".bmp", ".tiff",
+    ".mp3", ".mp4", ".avi", ".mkv", ".mov", ".flv", ".wmv", ".wav", ".ogg", ".webm",
+    ".woff", ".woff2", ".ttf", ".eot", ".otf",
+    ".css", ".js", ".mjs", ".map",
+    ".wasm",
+    ".bin", ".dat", ".o", ".so", ".dylib", ".dll", ".a", ".lib",
+];
+
+fn should_skip_url(url: &str) -> bool {
+    let path = url.split('?').next().unwrap_or(url).to_ascii_lowercase();
+    SKIP_EXTENSIONS.iter().any(|ext| path.ends_with(ext))
+}
+
 async fn process_task(ctx: &WorkerContext, task: CrawlTask) {
     let url = &task.url;
+
+    if should_skip_url(url) {
+        debug!("skipping non-HTML URL: {}", url);
+        ctx.frontier.complete();
+        return;
+    }
 
     if ctx.config.respect_robots && !ctx.robots.is_allowed(url).await {
         debug!("robots.txt disallows {}", url);
@@ -92,7 +117,9 @@ async fn process_task(ctx: &WorkerContext, task: CrawlTask) {
         let base = Url::parse(&final_url).unwrap_or(parsed_url);
         let links = extract_links(&html_clone, &base);
         for link in links {
-            ctx.frontier.try_push(link, task.depth + 1, &ctx.local);
+            if !should_skip_url(&link) {
+                ctx.frontier.try_push(link, task.depth + 1, &ctx.local);
+            }
         }
     }
 

@@ -19,6 +19,7 @@
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use memmap2::Mmap;
 use slither_core::{EmbedderConfig, SlitherError};
+use std::collections::HashSet;
 use std::fs::{File, OpenOptions};
 use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
@@ -33,6 +34,7 @@ pub(crate) struct VectorStorage {
     vecmap_path: PathBuf,
     dimensions: usize,
     vector_count: u64,
+    stored_ids: HashSet<u64>,
 }
 
 impl VectorStorage {
@@ -45,21 +47,19 @@ impl VectorStorage {
         let vecmap_path = data_dir.join("vecmap.bin");
         let dimensions = config.dimensions;
 
-        let vector_count = if vectors_path.exists() {
+        let (vector_count, stored_ids) = if vectors_path.exists() {
             let count = Self::read_header(&vectors_path, dimensions)?;
-            if !vecmap_path.exists() {
-                File::create(&vecmap_path)?;
-            }
-            count
+            let ids = Self::load_stored_ids(&vecmap_path, count)?;
+            (count, ids)
         } else {
             Self::init_vectors_file(&vectors_path, dimensions as u32)?;
             File::create(&vecmap_path)?;
-            0
+            (0, HashSet::new())
         };
 
         debug!(
-            "VectorStorage: {} vectors, dim={}, path={:?}",
-            vector_count, dimensions, vectors_path
+            "VectorStorage: {} vectors, {} unique IDs, dim={}, path={:?}",
+            vector_count, stored_ids.len(), dimensions, vectors_path
         );
 
         Ok(Self {
@@ -67,7 +67,26 @@ impl VectorStorage {
             vecmap_path,
             dimensions,
             vector_count,
+            stored_ids,
         })
+    }
+
+    fn load_stored_ids(vecmap_path: &std::path::Path, expected_count: u64) -> Result<HashSet<u64>, SlitherError> {
+        let mut ids = HashSet::with_capacity(expected_count as usize);
+        if !vecmap_path.exists() {
+            File::create(vecmap_path)?;
+            return Ok(ids);
+        }
+        let data = std::fs::read(vecmap_path)?;
+        let n = data.len() / 8;
+        for i in 0..n {
+            let offset = i * 8;
+            if offset + 8 <= data.len() {
+                let id = u64::from_le_bytes(data[offset..offset + 8].try_into().unwrap());
+                ids.insert(id);
+            }
+        }
+        Ok(ids)
     }
 
     fn init_vectors_file(path: &std::path::Path, dims: u32) -> Result<(), SlitherError> {
@@ -117,6 +136,10 @@ impl VectorStorage {
 
     /// Append `vector` to vectors.bin and record `doc_id` in vecmap.bin.
     pub fn store(&mut self, doc_id: u64, vector: &[f32]) -> Result<(), SlitherError> {
+        if self.stored_ids.contains(&doc_id) {
+            return Ok(());
+        }
+
         if vector.len() != self.dimensions {
             return Err(SlitherError::Storage(format!(
                 "vector length {} does not match configured dimensions {}",
@@ -160,6 +183,7 @@ impl VectorStorage {
         }
 
         self.vector_count += 1;
+        self.stored_ids.insert(doc_id);
         debug!(
             "stored vector idx={} doc_id={}",
             self.vector_count - 1,

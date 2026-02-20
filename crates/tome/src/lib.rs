@@ -333,7 +333,9 @@ impl Index {
             doc_ids: self.seq_to_doc_id.clone(),
         };
         let meta_bytes = serde_json::to_vec(&meta)?;
-        std::fs::write(&meta_path, &meta_bytes)?;
+        let meta_tmp = meta_path.with_extension("json.tmp");
+        std::fs::write(&meta_tmp, &meta_bytes)?;
+        std::fs::rename(&meta_tmp, &meta_path)?;
 
         self.flushed = true;
         info!(

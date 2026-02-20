@@ -58,6 +58,9 @@ impl DocStoreWriter {
         }
         let entry_table_offset = 20;
         let data_section_offset = entry_table_offset + doc_count * 12;
+        if raw.len() < data_section_offset {
+            return Ok(Self::new(path));
+        }
         let mut offsets = Vec::with_capacity(doc_count);
         for i in 0..doc_count {
             let pos = entry_table_offset + i * 12;
@@ -84,7 +87,8 @@ impl DocStoreWriter {
     }
 
     pub fn flush(self) -> Result<(), SlitherError> {
-        let file = File::create(&self.path)?;
+        let tmp_path = self.path.with_extension("bin.tmp");
+        let file = File::create(&tmp_path)?;
         let mut w = BufWriter::new(file);
 
         w.write_all(MAGIC_DOC)?;
@@ -98,7 +102,9 @@ impl DocStoreWriter {
 
         w.write_all(&self.data)?;
         w.flush()?;
+        drop(w);
 
+        std::fs::rename(&tmp_path, &self.path)?;
         Ok(())
     }
 }
@@ -206,7 +212,8 @@ impl IndexWriter {
     }
 
     pub fn flush(self) -> Result<(), SlitherError> {
-        let file = File::create(&self.path)?;
+        let tmp_path = self.path.with_extension("bin.tmp");
+        let file = File::create(&tmp_path)?;
         let mut w = BufWriter::new(file);
 
         w.write_all(MAGIC_IDX)?;
@@ -221,7 +228,9 @@ impl IndexWriter {
 
         w.write_all(&self.postings_data)?;
         w.flush()?;
+        drop(w);
 
+        std::fs::rename(&tmp_path, &self.path)?;
         Ok(())
     }
 }
@@ -370,8 +379,12 @@ impl TermDictWriter {
     }
 
     pub fn flush(self) -> Result<(), SlitherError> {
-        let mut file = File::create(&self.path)?;
+        let tmp_path = self.path.with_extension("bin.tmp");
+        let mut file = File::create(&tmp_path)?;
         file.write_all(&self.buf)?;
+        file.flush()?;
+        drop(file);
+        std::fs::rename(&tmp_path, &self.path)?;
         Ok(())
     }
 }

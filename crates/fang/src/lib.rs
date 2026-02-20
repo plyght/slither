@@ -6,19 +6,16 @@ mod text;
 pub use config::FangConfig;
 pub use slither_core::Document;
 
-use std::sync::atomic::{AtomicU64, Ordering};
-
 use scraper::Html;
 use slither_core::{RawPage, SlitherError, SlitherResult};
 use tracing::warn;
+use xxhash_rust::xxh3::xxh3_64;
 
 use extractor::{
     compute_content_hash, extract_headings, extract_lang, extract_meta_description, extract_title,
 };
 use links::extract_links;
 use text::extract_clean_text;
-
-static DOC_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 pub struct Transformer;
 
@@ -66,7 +63,11 @@ impl Fang {
             .map(|s| s.as_str())
             .unwrap_or("text/html");
 
-        if !content_type.contains("html") && !content_type.contains("text") {
+        let ct_lower = content_type.to_ascii_lowercase();
+        let is_html = ct_lower.contains("text/html")
+            || ct_lower.contains("application/xhtml");
+
+        if !is_html {
             return Err(SlitherError::Transform(format!(
                 "non-HTML content-type '{}' for url: {}",
                 content_type, page.url
@@ -104,7 +105,7 @@ impl Fang {
             Vec::new()
         };
 
-        let id = DOC_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let id = xxh3_64(page.url.as_bytes());
 
         Ok(Document {
             id,
