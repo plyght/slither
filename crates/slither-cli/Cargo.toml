@@ -26,3 +26,5 @@ tower = "0.4"
 tower-http = { version = "0.5", features = ["cors", "fs"] }
 serde = { version = "1", features = ["derive"] }
 reqwest = { workspace = true, features = ["json"] }
+zip = "2"
+url = "2"
