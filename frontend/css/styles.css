@@ -34,15 +34,12 @@ html {
 }
 
 body {
-    font-family: 'STIX Two Text', 'Times New Roman', serif;
+    font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
     color: var(--text-primary);
     background: var(--bg-primary);
     line-height: 1.6;
-    font-size: 17px;
-    text-rendering: optimizeLegibility;
-    font-kerning: normal;
-    font-variant-ligatures: common-ligatures;
-    font-variant-numeric: oldstyle-nums proportional-nums;
+    font-size: 15px;
+    font-variant-numeric: tabular-nums;
     min-height: 100vh;
     min-height: 100dvh;
     overflow-x: hidden;
@@ -52,16 +49,7 @@ body {
 }
 
 body::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    background-image:
-        linear-gradient(var(--border-color) 1px, transparent 1px),
-        linear-gradient(90deg, var(--border-color) 1px, transparent 1px);
-    background-size: 24px 24px;
-    opacity: 0.08;
-    pointer-events: none;
-    z-index: 0;
+    display: none;
 }
 
 ::selection {
@@ -71,16 +59,12 @@ body::before {
 
 a {
     color: inherit;
-    text-decoration: underline;
-    text-decoration-style: dotted;
-    text-decoration-thickness: 0.06em;
-    text-underline-offset: 2px;
-    transition: color 0.2s ease, text-decoration-style 0.2s ease;
+    text-decoration: none;
+    transition: color 0.15s ease, opacity 0.15s ease;
 }
 
 a:hover {
     color: var(--text-primary);
-    text-decoration-style: solid;
 }
 
 a:focus-visible {
@@ -170,11 +154,11 @@ body[data-state="results"] .brand-title {
 }
 
 .brand-tagline {
-    font-family: 'EB Garamond', serif;
-    font-size: 0.95rem;
-    font-style: italic;
+    font-family: inherit;
+    font-size: 0.82rem;
     color: var(--text-secondary);
     text-align: center;
+    letter-spacing: 0.02em;
     transition: opacity 0.3s ease, max-height 0.3s ease;
     overflow: hidden;
 }
@@ -198,16 +182,15 @@ body[data-state="results"] .brand-tagline {
 
 .search-input {
     width: 100%;
-    font-family: 'STIX Two Text', serif;
-    font-size: 1.15rem;
+    font-family: inherit;
+    font-size: 1.05rem;
     color: var(--text-primary);
     background: transparent;
     border: none;
-    border-bottom: 0.5px solid var(--border-color);
+    border-bottom: 1px solid var(--border-color);
     padding: 12px 80px 12px 0;
     outline: none;
     transition: border-color 0.2s ease;
-    font-variant-numeric: oldstyle-nums proportional-nums;
     -webkit-appearance: none;
     appearance: none;
 }
@@ -220,8 +203,7 @@ body[data-state="results"] .brand-tagline {
 
 .search-input::placeholder {
     color: var(--text-secondary);
-    opacity: 0.6;
-    font-style: italic;
+    opacity: 0.5;
 }
 
 .search-input:focus {
@@ -312,18 +294,16 @@ body[data-state="results"] .search-modes {
 }
 
 .mode-btn {
-    font-family: 'STIX Two Text', serif;
-    font-size: 0.85rem;
+    font-family: inherit;
+    font-size: 0.8rem;
     color: var(--text-secondary);
     background: none;
     border: none;
     padding: 2px 10px;
     cursor: pointer;
-    text-decoration: underline;
-    text-decoration-style: dotted;
-    text-decoration-thickness: 0.06em;
-    text-underline-offset: 2px;
-    transition: color 0.2s ease, text-decoration-style 0.2s ease;
+    text-decoration: none;
+    letter-spacing: 0.02em;
+    transition: color 0.15s ease;
     min-height: 44px;
     display: inline-flex;
     align-items: center;
@@ -340,8 +320,8 @@ body[data-state="results"] .search-modes {
     right: 0;
     top: 50%;
     transform: translateY(-50%);
-    height: 0.9em;
-    width: 0.5px;
+    height: 12px;
+    width: 1px;
     background: var(--border-color);
 }
 
@@ -351,7 +331,6 @@ body[data-state="results"] .search-modes {
 
 .mode-btn.active {
     color: var(--text-primary);
-    text-decoration-style: solid;
 }
 
 .kbd-hint {
@@ -361,6 +340,9 @@ body[data-state="results"] .search-modes {
     color: var(--text-secondary);
     opacity: 0.5;
     transition: opacity 0.3s ease;
+    cursor: default;
+    -webkit-user-select: none;
+    user-select: none;
 }
 
 body[data-state="results"] .kbd-hint {
@@ -391,24 +373,16 @@ body[data-state="results"] .results-section {
 
 .results-ornament {
     display: block;
-    width: 60px;
-    height: 12px;
+    width: 32px;
+    height: 1px;
     margin: 0 0 24px;
-    position: relative;
-}
-
-.results-ornament::before {
-    content: '\2014';
-    font-size: 1rem;
-    color: var(--text-secondary);
-    letter-spacing: 0.3em;
+    background: var(--border-color);
 }
 
 .results-meta {
-    font-size: 0.85rem;
+    font-size: 0.8rem;
     color: var(--text-secondary);
     margin-bottom: 8px;
-    font-variant-numeric: lining-nums;
     cursor: default;
     -webkit-user-select: none;
     user-select: none;
@@ -460,12 +434,18 @@ body[data-state="results"] .results-section {
 }
 
 .result-title {
-    font-family: 'EB Garamond', serif;
-    font-size: 1.18rem;
-    font-weight: 400;
+    font-family: inherit;
+    font-size: 1.05rem;
+    font-weight: 500;
     display: inline;
     line-height: 1.3;
     cursor: pointer;
+}
+
+.result-title:hover {
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
 }
 
 .result-url {
@@ -482,11 +462,9 @@ body[data-state="results"] .results-section {
 }
 
 .result-snippet {
-    font-size: 0.95rem;
+    font-size: 0.9rem;
     color: var(--text-secondary);
-    line-height: 1.65;
-    text-align: justify;
-    hyphens: auto;
+    line-height: 1.6;
 }
 
 .result-snippet mark {
@@ -511,9 +489,7 @@ body[data-state="results"] .results-section {
 }
 
 .no-results-ornament {
-    font-family: 'EB Garamond', serif;
     font-size: 2.8rem;
-    font-style: normal;
     opacity: 0.1;
     display: block;
     margin-bottom: 10px;
@@ -532,22 +508,19 @@ body[data-state="results"] .results-section {
 }
 
 .retry-btn {
-    font-family: 'STIX Two Text', serif;
-    font-size: 0.9rem;
+    font-family: inherit;
+    font-size: 0.85rem;
     color: var(--text-secondary);
     background: none;
     border: none;
     cursor: pointer;
     text-decoration: underline;
-    text-decoration-style: dotted;
-    text-decoration-thickness: 0.06em;
     text-underline-offset: 2px;
-    transition: color 0.2s ease, text-decoration-style 0.2s ease;
+    transition: color 0.15s ease;
 }
 
 .retry-btn:hover {
     color: var(--text-primary);
-    text-decoration-style: solid;
 }
 
 @keyframes shimmer {
@@ -673,11 +646,6 @@ body[data-state="results"] .site-footer::before {
 }
 
 @media (max-width: 768px) {
-    body::before {
-        background-size: 18px 18px;
-        opacity: 0.05;
-    }
-
     .content-wrap {
         padding: 0 1.5rem;
         padding-top: 28vh;
