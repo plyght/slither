@@ -6,7 +6,8 @@ const RRF_K: usize = 60;
 
 const DOMAIN_EXACT_BOOST: f64 = 0.05;
 const DOMAIN_PREFIX_BOOST: f64 = 0.025;
-const HOMEPAGE_BOOST: f64 = 0.02;
+const HOMEPAGE_BOOST: f64 = 0.08;
+const BRAND_BOOST: f64 = 0.06;
 const SHALLOW_PATH_BOOST: f64 = 0.004;
 const TITLE_EXACT_BOOST: f64 = 0.015;
 const TITLE_WORD_PREFIX_BOOST: f64 = 0.01;
@@ -107,6 +108,9 @@ fn compute_url_boost(url: &str, title: &str, query_lower: &str, query_terms: &[&
         if is_preferred_tld(domain_bare) {
             boost += TLD_BOOST;
         }
+        if is_known_brand(domain_name) {
+            boost += BRAND_BOOST;
+        }
     } else if query_terms.len() == 1 {
         if domain_name.starts_with(query_lower) && query_lower.len() >= 3 {
             let coverage = query_lower.len() as f64 / domain_name.len() as f64;
@@ -119,6 +123,9 @@ fn compute_url_boost(url: &str, title: &str, query_lower: &str, query_terms: &[&
         for term in query_terms {
             if domain_name == *term {
                 boost += DOMAIN_EXACT_BOOST * 0.4;
+                if is_known_brand(domain_name) {
+                    boost += BRAND_BOOST * 0.5;
+                }
                 break;
             } else if term.len() >= 3 && domain_name.starts_with(*term) {
                 boost += DOMAIN_PREFIX_BOOST * 0.3;
@@ -211,6 +218,64 @@ fn is_preferred_tld(domain_bare: &str) -> bool {
         return PREFERRED_TLDS.contains(&tld);
     }
     false
+}
+
+fn is_known_brand(domain_name: &str) -> bool {
+    static KNOWN_BRANDS: &[&str] = &[
+        "discord",
+        "github",
+        "gitlab",
+        "bitbucket",
+        "stackoverflow",
+        "reddit",
+        "twitter",
+        "x",
+        "facebook",
+        "meta",
+        "instagram",
+        "linkedin",
+        "youtube",
+        "tiktok",
+        "snapchat",
+        "pinterest",
+        "whatsapp",
+        "telegram",
+        "slack",
+        "zoom",
+        "notion",
+        "figma",
+        "stripe",
+        "shopify",
+        "airbnb",
+        "uber",
+        "lyft",
+        "amazon",
+        "apple",
+        "google",
+        "microsoft",
+        "netflix",
+        "spotify",
+        "twitch",
+        "discord",
+        "producthunt",
+        "hackernews",
+        "ycombinator",
+        "medium",
+        "dev",
+        "npm",
+        "pypi",
+        "rust-lang",
+        "python",
+        "golang",
+        "jetbrains",
+        "vercel",
+        "netlify",
+        "cloudflare",
+        "heroku",
+        "digitalocean",
+        "aws",
+    ];
+    KNOWN_BRANDS.contains(&domain_name)
 }
 
 fn is_profile_page(path_lower: &str) -> bool {
