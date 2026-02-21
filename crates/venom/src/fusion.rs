@@ -67,6 +67,7 @@ pub fn reciprocal_rank_fusion(
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
+    fused = dedup_by_url(fused);
     fused = dedup_by_domain(fused);
     fused.truncate(limit);
     fused
@@ -250,6 +251,55 @@ fn parse_domain_path(url: &str) -> Option<(String, String)> {
     };
 
     Some((host.to_string(), path.to_string()))
+}
+
+fn normalize_url_key(url: &str) -> String {
+    let without_scheme = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))
+        .unwrap_or(url);
+
+    let without_www = without_scheme
+        .strip_prefix("www.")
+        .unwrap_or(without_scheme);
+
+    let without_query = match without_www.find('?') {
+        Some(i) => &without_www[..i],
+        None => without_www,
+    };
+
+    let without_fragment = match without_query.find('#') {
+        Some(i) => &without_query[..i],
+        None => without_query,
+    };
+
+    let trimmed = without_fragment.trim_end_matches('/');
+    trimmed.to_lowercase()
+}
+
+fn dedup_by_url(results: Vec<SearchResult>) -> Vec<SearchResult> {
+    let mut seen: HashMap<String, usize> = HashMap::new();
+    let mut deduped: Vec<SearchResult> = Vec::with_capacity(results.len());
+
+    for result in results {
+        let key = normalize_url_key(&result.url);
+        if let Some(&idx) = seen.get(&key) {
+            if result.score > deduped[idx].score {
+                deduped[idx] = result;
+            }
+        } else {
+            seen.insert(key, deduped.len());
+            deduped.push(result);
+        }
+    }
+
+    deduped.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    deduped
 }
 
 fn dedup_by_domain(results: Vec<SearchResult>) -> Vec<SearchResult> {
