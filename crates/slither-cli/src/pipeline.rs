@@ -8,7 +8,7 @@ use slither_core::{
 };
 use snake::Crawler;
 use tome::Index;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 use venom::Ranker;
 
 pub async fn crawl(config: SlitherConfig, seeds: Vec<Seed>) -> SlitherResult<()> {
@@ -77,13 +77,19 @@ pub async fn crawl(config: SlitherConfig, seeds: Vec<Seed>) -> SlitherResult<()>
                         let page_domain = raw_page.domain.clone();
                         match transformer.transform(&raw_page) {
                             Ok(doc) => {
-                                if let std::collections::hash_map::Entry::Vacant(e) = domain_favicons.entry(page_domain) {
-                                    e.insert(doc.favicon_url.clone());
-                                }
-                                match ranker.index_document(&doc) {
-                                    Ok(()) => pages_indexed += 1,
-                                    Err(e) => {
-                                        warn!("index error for {}: {e}", raw_page.url);
+                                let quality = fang::content_quality_score(&doc.body);
+                                let is_homepage = is_homepage_url(&raw_page.url);
+                                if quality < 0.15 && !is_homepage {
+                                    debug!("skipping low-quality page ({quality:.2}): {}", raw_page.url);
+                                } else {
+                                    if let std::collections::hash_map::Entry::Vacant(e) = domain_favicons.entry(page_domain) {
+                                        e.insert(doc.favicon_url.clone());
+                                    }
+                                    match ranker.index_document(&doc) {
+                                        Ok(()) => pages_indexed += 1,
+                                        Err(e) => {
+                                            warn!("index error for {}: {e}", raw_page.url);
+                                        }
                                     }
                                 }
                             }
@@ -324,6 +330,23 @@ async fn fetch_favicons(favicon_dir: &Path, domains: &[(String, String)]) {
         }
     }
     println!("  Fetched {fetched} favicon(s)");
+}
+
+fn is_homepage_url(url: &str) -> bool {
+    let without_scheme = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))
+        .unwrap_or(url);
+    let path = match without_scheme.find('/') {
+        Some(i) => &without_scheme[i..],
+        None => "",
+    };
+    let path_clean = path.split('?').next().unwrap_or(path);
+    let path_clean = path_clean.split('#').next().unwrap_or(path_clean);
+    path_clean.is_empty()
+        || path_clean == "/"
+        || path_clean == "/index.html"
+        || path_clean == "/index.htm"
 }
 
 #[cfg(unix)]

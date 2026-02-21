@@ -147,6 +147,54 @@ fn collect_text_from_root(document: &Html, out: &mut Vec<String>) {
     }
 }
 
+/// Compute a content quality score (0.0–1.0) measuring how much real, unique
+/// text a page contains vs navigation/boilerplate. Real search engines call
+/// this "content-to-chrome ratio."
+///
+/// Returns 0.0 for pure boilerplate (empty, all short fragments, no real sentences).
+/// Returns ~1.0 for well-written articles with long, unique paragraphs.
+pub fn content_quality_score(body: &str) -> f32 {
+    if body.is_empty() {
+        return 0.0;
+    }
+
+    let words: Vec<&str> = body.split_whitespace().collect();
+    let word_count = words.len();
+    if word_count < 15 {
+        return 0.0;
+    }
+
+    // unique word ratio — boilerplate pages repeat the same few navigation terms
+    let mut seen = std::collections::HashSet::new();
+    for w in &words {
+        seen.insert(w.to_ascii_lowercase());
+    }
+    let unique_ratio = seen.len() as f32 / word_count as f32;
+
+    // sentence quality — real content has sentences (7+ words between periods).
+    // boilerplate pages are mostly short fragments: "Fork 12", "Star 0", "Actions"
+    let sentences: Vec<&str> = body.split(['.', '!', '?'])
+        .filter(|s| s.split_whitespace().count() >= 7)
+        .collect();
+    let sentence_ratio = if word_count > 0 {
+        let sentence_words: usize = sentences.iter().map(|s| s.split_whitespace().count()).sum();
+        sentence_words as f32 / word_count as f32
+    } else {
+        0.0
+    };
+
+    // paragraph quality — real articles have paragraphs with 20+ words
+    let paragraphs: Vec<&str> = body.split("\n\n")
+        .filter(|p| p.split_whitespace().count() >= 20)
+        .collect();
+    let long_para_count = paragraphs.len() as f32;
+    let para_score = (long_para_count / 3.0).min(1.0); // 3+ long paragraphs = full score
+
+    // weighted combination
+    let score = unique_ratio * 0.3 + sentence_ratio * 0.4 + para_score * 0.3;
+    score.clamp(0.0, 1.0)
+}
+
 pub fn collapse_whitespace(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
     let mut last_was_space = false;

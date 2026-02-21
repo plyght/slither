@@ -114,9 +114,37 @@ const SKIP_EXTENSIONS: &[&str] = &[
     ".lib",
 ];
 
+const SKIP_PATH_SEGMENTS: &[&str] = &[
+    // auth / account — never useful content
+    "/login",
+    "/signup",
+    "/join",
+    "/sessions",
+    "/password_reset",
+    "/auth/",
+    "/oauth/",
+    // CMS admin
+    "/wp-admin/",
+    "/wp-login",
+    // e-commerce flows
+    "/cart",
+    "/checkout",
+    // feeds / machine-readable
+    "/feed/",
+    "/rss",
+    "/atom.xml",
+    // pagination / sort params — duplicates of the base page
+    "?page=",
+    "&page=",
+];
+
 fn should_skip_url(url: &str) -> bool {
-    let path = url.split('?').next().unwrap_or(url).to_ascii_lowercase();
-    SKIP_EXTENSIONS.iter().any(|ext| path.ends_with(ext))
+    let lower = url.to_ascii_lowercase();
+    let path = lower.split('?').next().unwrap_or(&lower);
+    if SKIP_EXTENSIONS.iter().any(|ext| path.ends_with(ext)) {
+        return true;
+    }
+    SKIP_PATH_SEGMENTS.iter().any(|seg| lower.contains(seg))
 }
 
 async fn process_task(ctx: &WorkerContext, task: CrawlTask) {

@@ -17,6 +17,7 @@ use extractor::{
 };
 use links::extract_links;
 use text::extract_clean_text;
+pub use text::content_quality_score;
 
 pub struct Transformer;
 
@@ -38,6 +39,87 @@ impl Default for Transformer {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn is_homepage(url: &str) -> bool {
+    let without_scheme = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))
+        .unwrap_or(url);
+    let path = match without_scheme.find('/') {
+        Some(i) => &without_scheme[i..],
+        None => "",
+    };
+    let path_clean = path.split('?').next().unwrap_or(path);
+    let path_clean = path_clean.split('#').next().unwrap_or(path_clean);
+    path_clean.is_empty()
+        || path_clean == "/"
+        || path_clean == "/index.html"
+        || path_clean == "/index.htm"
+}
+
+fn extract_domain_name(url: &str) -> String {
+    let without_scheme = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))
+        .unwrap_or(url);
+    let host = without_scheme.split('/').next().unwrap_or(without_scheme);
+    let host = host.split(':').next().unwrap_or(host);
+    let bare = host.strip_prefix("www.").unwrap_or(host);
+    bare.to_string()
+}
+
+fn enrich_homepage_body(
+    body: &str,
+    title: &str,
+    meta_description: &Option<String>,
+    headings: &[String],
+    url: &str,
+) -> String {
+    if !is_homepage(url) {
+        return body.to_string();
+    }
+
+    let domain = extract_domain_name(url);
+    let domain_name = domain.split('.').next().unwrap_or(&domain);
+
+    let word_count = body.split_whitespace().count();
+    if word_count >= 100 {
+        return body.to_string();
+    }
+
+    let mut enriched = String::with_capacity(body.len() + 512);
+
+    enriched.push_str(domain_name);
+    enriched.push_str(" - ");
+    enriched.push_str(&domain);
+
+    if !title.is_empty() {
+        enriched.push_str("\n\n");
+        enriched.push_str(title);
+    }
+
+    if let Some(desc) = meta_description {
+        if !desc.is_empty() {
+            enriched.push_str("\n\n");
+            enriched.push_str(desc);
+        }
+    }
+
+    if !headings.is_empty() {
+        enriched.push_str("\n\n");
+        for h in headings.iter().take(10) {
+            enriched.push_str(h);
+            enriched.push_str(". ");
+        }
+    }
+
+    if !body.is_empty() {
+        enriched.push_str("\n\n");
+        enriched.push_str(body);
+    }
+
+    enriched
 }
 
 pub struct Fang {
@@ -102,6 +184,8 @@ impl Fang {
         } else {
             body
         };
+
+        let body = enrich_homepage_body(&body, &title, &meta_description, &headings, &page.url);
 
         let lang = extract_lang(&document, &body);
         let content_hash = compute_content_hash(&body);

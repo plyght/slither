@@ -10,45 +10,23 @@ const JUNK_TLDS: &[&str] = &[
     ".cn", ".ru", ".su", ".ir", ".kp",
 ];
 
-const JUNK_DOMAINS: &[&str] = &[
-    "google.com", "googleapis.com", "gstatic.com", "googlevideo.com",
-    "googleusercontent.com", "google-analytics.com", "googletagmanager.com",
-    "googleadservices.com", "googlesyndication.com", "doubleclick.net",
-    "facebook.com", "fbcdn.net", "fb.com", "instagram.com",
-    "twitter.com", "x.com", "twimg.com", "t.co",
-    "apple.com", "icloud.com", "mzstatic.com",
-    "microsoft.com", "office.com", "live.com", "outlook.com",
-    "bing.com", "msn.com", "windows.net", "azure.com",
-    "amazonaws.com", "aws.amazon.com", "cloudfront.net",
-    "cloudflare.com", "cdnjs.cloudflare.com",
+const INFRA_KEYWORDS: &[&str] = &[
+    "cdn", "static", "cache", "proxy", "tracker", "analytics",
+    "adserver", "pixel", "beacon", "telemetry", "syndication",
+    "usercontent", "userimages", "assets", "embed",
+];
+
+const INFRA_SUFFIXES: &[&str] = &[
+    "googleapis.com", "gstatic.com", "googlevideo.com",
+    "googleusercontent.com", "google-analytics.com",
+    "googletagmanager.com", "googleadservices.com",
+    "googlesyndication.com", "doubleclick.net",
+    "fbcdn.net", "twimg.com", "mzstatic.com",
     "akamai.net", "akamaihd.net", "akamaized.net",
-    "fastly.net", "cloudflare-dns.com",
-    "yahoo.com", "yimg.com",
-    "baidu.com", "qq.com", "taobao.com", "tmall.com", "alipay.com",
-    "weibo.com", "tencent.com", "jd.com", "163.com", "sohu.com",
-    "mail.ru", "dzen.ru", "yandex.ru", "yandex.com", "vk.com",
-    "tiktok.com", "bytedance.com",
-    "whatsapp.com", "telegram.org",
-    "zoom.us", "teams.microsoft.com",
+    "cloudfront.net", "fastly.net",
+    "amazonaws.com",
+    "windows.net",
     "gtld-servers.net", "root-servers.net",
-    "w3.org", "schema.org", "creativecommons.org",
-    "gravatar.com", "wp.com", "wordpress.org",
-    "shopify.com", "squarespace.com", "wix.com",
-    "stripe.com", "paypal.com",
-    "recaptcha.net", "hcaptcha.com",
-    "sentry.io", "bugsnag.com",
-    "fontawesome.com", "fonts.googleapis.com",
-    "jquery.com", "jsdelivr.net", "unpkg.com",
-    "cookiebot.com", "onetrust.com", "cookielaw.org",
-    "intercom.io", "zendesk.com", "freshdesk.com",
-    "hotjar.com", "mixpanel.com", "segment.com", "amplitude.com",
-    "pinterest.com", "snapchat.com",
-    "spotify.com", "netflix.com", "twitch.tv", "discord.com",
-    "linkedin.com",
-    "amazon.com", "ebay.com", "aliexpress.com",
-    "godaddy.com", "namecheap.com",
-    "bit.ly", "tinyurl.com", "goo.gl",
-    "archive.org",
 ];
 
 const CONTENT_RICH_KEYWORDS: &[&str] = &[
@@ -59,94 +37,86 @@ const CONTENT_RICH_KEYWORDS: &[&str] = &[
     "edu", "university", "mit", "stanford", "berkeley",
 ];
 
-const KNOWN_CONTENT_DOMAINS: &[&str] = &[
-    "github.com", "github.io",
-    "stackoverflow.com", "stackexchange.com", "superuser.com", "serverfault.com",
-    "reddit.com",
-    "wikipedia.org", "wikimedia.org", "wikidata.org",
-    "medium.com", "substack.com", "dev.to", "hashnode.dev",
-    "arxiv.org", "scholar.google.com",
-    "docs.rs", "crates.io", "rust-lang.org",
-    "python.org", "pypi.org", "readthedocs.io", "readthedocs.org",
-    "mozilla.org", "developer.mozilla.org",
-    "npmjs.com", "nodejs.org",
-    "go.dev", "golang.org",
-    "kubernetes.io", "docker.com",
-    "news.ycombinator.com", "lobste.rs",
-    "producthunt.com",
-    "techcrunch.com", "arstechnica.com", "theverge.com", "wired.com",
-    "bbc.com", "reuters.com", "nytimes.com", "washingtonpost.com",
-    "nature.com", "sciencedirect.com", "ieee.org", "acm.org",
-    "freecodecamp.org", "codecademy.com",
-    "vercel.com", "netlify.com", "heroku.com",
-    "digitalocean.com", "linode.com", "vultr.com",
-    "huggingface.co", "openai.com", "anthropic.com",
-    "gitlab.com", "bitbucket.org",
-    "hackernoon.com", "infoq.com", "dzone.com",
-    "smashingmagazine.com", "css-tricks.com", "alistapart.com",
-    "martinfowler.com", "joelonsoftware.com",
-];
-
 fn is_junk_domain(domain: &str) -> bool {
-    if JUNK_DOMAINS.iter().any(|j| domain == *j || domain.ends_with(&format!(".{j}"))) {
-        return true;
-    }
     if JUNK_TLDS.iter().any(|tld| domain.ends_with(tld)) {
         return true;
     }
-    if domain.contains("cdn") || domain.contains("static") || domain.contains("cache")
-        || domain.contains("proxy") || domain.contains("tracker") || domain.contains("analytics")
-        || domain.contains("adserver") || domain.contains("pixel")
+    if INFRA_SUFFIXES
+        .iter()
+        .any(|s| domain == *s || domain.ends_with(&format!(".{s}")))
     {
+        return true;
+    }
+    let name = domain.split('.').next().unwrap_or(domain);
+    if INFRA_KEYWORDS.iter().any(|kw| name.contains(kw)) {
+        return true;
+    }
+    let parts: Vec<&str> = domain.split('.').collect();
+    if parts.len() >= 3 {
+        let subdomain = parts[..parts.len() - 2].join(".");
+        if INFRA_KEYWORDS.iter().any(|kw| subdomain.contains(kw)) {
+            return true;
+        }
+    }
+    if name.len() <= 2 && domain.len() <= 6 {
         return true;
     }
     false
 }
 
-fn score_domain(domain: &str, rank: usize) -> f64 {
-    let mut score: f64 = 1_000_000.0 / (rank as f64 + 100.0);
+fn content_richness_score(domain: &str) -> f64 {
+    let mut score = 1.0;
 
-    if KNOWN_CONTENT_DOMAINS.iter().any(|k| domain == *k || domain.ends_with(&format!(".{k}"))) {
-        score *= 5.0;
-    }
+    let name = domain.split('.').next().unwrap_or(domain);
 
-    if CONTENT_RICH_KEYWORDS.iter().any(|kw| domain.contains(kw)) {
+    if CONTENT_RICH_KEYWORDS
+        .iter()
+        .any(|kw| name.contains(kw))
+    {
         score *= 2.0;
     }
 
     if domain.ends_with(".edu") || domain.ends_with(".ac.uk") || domain.ends_with(".edu.au") {
         score *= 3.0;
-    }
-
-    if domain.ends_with(".gov") {
+    } else if domain.ends_with(".gov") {
         score *= 1.5;
+    } else if domain.ends_with(".org") {
+        score *= 1.4;
+    } else if domain.ends_with(".io") || domain.ends_with(".dev") || domain.ends_with(".sh") {
+        score *= 1.3;
     }
 
-    if domain.ends_with(".io") || domain.ends_with(".dev") || domain.ends_with(".sh") {
-        score *= 1.3;
+    if name.len() <= 12 && name.chars().all(|c| c.is_ascii_alphabetic()) {
+        score *= 1.2;
     }
 
     score
 }
 
-fn depth_for_domain(domain: &str) -> usize {
-    if KNOWN_CONTENT_DOMAINS.iter().any(|k| domain == *k || domain.ends_with(&format!(".{k}"))) {
+fn score_domain(domain: &str, rank: usize) -> f64 {
+    let mut score: f64 = 1_000_000.0 / (rank as f64 + 100.0);
+    score *= content_richness_score(domain);
+    score
+}
+
+fn depth_for_domain(domain: &str, rank: usize) -> usize {
+    if content_richness_score(domain) >= 2.0 {
         return 3;
     }
-    if domain.contains("docs") || domain.contains("wiki") || domain.contains("dev")
-        || domain.contains("blog") || domain.contains("learn")
-    {
+    if rank <= 1000 {
         return 3;
     }
-    if domain.ends_with(".edu") || domain.ends_with(".ac.uk") {
-        return 3;
+    if rank <= 10000 {
+        return 2;
     }
     2
 }
 
 fn scope_for_domain(domain: &str) -> CrawlScope {
-    if domain.contains("news") || domain == "reddit.com" || domain == "lobste.rs"
-        || domain.contains("ycombinator")
+    if domain.contains("news")
+        || domain.contains("aggregat")
+        || domain.contains("forum")
+        || domain.contains("discuss")
     {
         return CrawlScope::Any;
     }
@@ -247,12 +217,13 @@ pub async fn discover_from_tranco(existing: &[Seed], limit: usize) -> Vec<Seed> 
     let picked: Vec<Seed> = candidates.iter()
         .take(limit)
         .map(|(domain, rank, _score)| {
+            let depth = depth_for_domain(domain, *rank);
             Seed::Configured(SeedConfig {
                 url: format!("https://{domain}"),
-                depth: depth_for_domain(domain),
+                depth,
                 priority: priority_for_rank(*rank),
                 scope: scope_for_domain(domain),
-                sitemap: depth_for_domain(domain) >= 3,
+                sitemap: depth >= 3,
             })
         })
         .collect();
