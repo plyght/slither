@@ -43,7 +43,7 @@ impl Ranker {
             .unwrap_or(self.last_reload_mtime);
 
         if current_mtime > self.last_reload_mtime {
-            self.index = tome::Index::open(&self.index_path)?;
+            self.index = tome::Index::open_for_serve(&self.index_path)?;
             self.last_reload_mtime = current_mtime;
         }
         Ok(())

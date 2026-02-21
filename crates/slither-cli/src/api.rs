@@ -141,7 +141,7 @@ type SharedRanker = Arc<tokio::sync::RwLock<Ranker>>;
 pub async fn serve(config: SlitherConfig, host: &str, port: u16) -> SlitherResult<()> {
     println!("Starting API server on http://{}:{}", host, port);
 
-    let index = Index::open(std::path::Path::new(&config.index.data_dir))?;
+    let index = Index::open_for_serve(std::path::Path::new(&config.index.data_dir))?;
     let embedder = Iris::new(config.embedder.clone())?;
     let ranker = Ranker::new(index, embedder);
 

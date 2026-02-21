@@ -97,6 +97,64 @@ impl Index {
         })
     }
 
+    pub fn open_for_serve(path: &Path) -> SlitherResult<Self> {
+        std::fs::create_dir_all(path)?;
+
+        let meta_path = path.join(META_FILE);
+        let docs_path = path.join(DOCS_FILE);
+        let index_path = path.join(INDEX_FILE);
+
+        let mem = InMemoryIndex::new();
+        let mut doc_id_to_seq: HashMap<u64, u64> = HashMap::new();
+        let mut seq_to_doc_id: Vec<u64> = Vec::new();
+        let doc_store_writer;
+
+        if meta_path.exists() && docs_path.exists() && index_path.exists() {
+            let meta_bytes = std::fs::read(&meta_path)?;
+            let meta: IndexMeta = serde_json::from_slice(&meta_bytes)?;
+
+            let mut mem_with_lengths = InMemoryIndex::new();
+            mem_with_lengths.doc_lengths = meta.doc_lengths.clone();
+            mem_with_lengths.total_doc_len = meta.total_doc_len;
+
+            for (seq, &doc_id) in meta.doc_ids.iter().enumerate() {
+                doc_id_to_seq.insert(doc_id, seq as u64);
+                seq_to_doc_id.push(doc_id);
+            }
+
+            doc_store_writer = DocStoreWriter::load_existing(docs_path)?;
+
+            info!(
+                doc_count = meta.doc_count,
+                "opened tome index for serving (disk-backed, no postings in RAM) at {}",
+                path.display()
+            );
+
+            return Ok(Self {
+                dir: path.to_path_buf(),
+                mem: mem_with_lengths,
+                doc_store_writer,
+                doc_id_to_seq,
+                seq_to_doc_id,
+                flushed: true,
+                crawl_mode: false,
+            });
+        }
+
+        doc_store_writer = DocStoreWriter::new(docs_path);
+        info!("created new tome index at {}", path.display());
+
+        Ok(Self {
+            dir: path.to_path_buf(),
+            mem,
+            doc_store_writer,
+            doc_id_to_seq,
+            seq_to_doc_id,
+            flushed: false,
+            crawl_mode: false,
+        })
+    }
+
     pub fn open_for_crawl(path: &Path) -> SlitherResult<Self> {
         std::fs::create_dir_all(path)?;
 
