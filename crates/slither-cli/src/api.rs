@@ -251,16 +251,22 @@ async fn search_handler(
         _ => SearchMode::Hybrid,
     };
 
+    let fetch_limit = limit + params.offset;
     let query = SearchQuery {
         text: params.q.clone(),
-        limit,
+        limit: fetch_limit,
     };
 
     let mut ranker = rankers.write().await;
 
     match ranker.search(&query, mode) {
         Ok(results) => {
-            let json_results: Vec<SearchResultJson> = results.into_iter().skip(params.offset).map(|r| r.into()).collect();
+            let json_results: Vec<SearchResultJson> = results
+                .into_iter()
+                .skip(params.offset)
+                .take(limit)
+                .map(|r| r.into())
+                .collect();
             Json(ApiResponse::ok(json_results))
         }
         Err(e) => Json(ApiResponse::err(&e.to_string())),
