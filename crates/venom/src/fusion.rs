@@ -4,10 +4,16 @@ use slither_core::SearchResult;
 
 const RRF_K: usize = 60;
 
-const DOMAIN_MATCH_BOOST: f64 = 0.012;
-const HOMEPAGE_BOOST: f64 = 0.006;
-const TITLE_EXACT_BOOST: f64 = 0.008;
+const DOMAIN_EXACT_BOOST: f64 = 0.05;
+const DOMAIN_PREFIX_BOOST: f64 = 0.025;
+const HOMEPAGE_BOOST: f64 = 0.02;
+const SHALLOW_PATH_BOOST: f64 = 0.004;
+const TITLE_EXACT_BOOST: f64 = 0.015;
+const TITLE_WORD_PREFIX_BOOST: f64 = 0.01;
 const MULTI_SOURCE_BOOST: f64 = 0.01;
+const JUNK_URL_PENALTY: f64 = -0.03;
+const DEEP_PATH_PENALTY: f64 = -0.006;
+const ERROR_PAGE_PENALTY: f64 = -0.025;
 
 pub fn reciprocal_rank_fusion(
     lists: &[Vec<SearchResult>],
@@ -75,19 +81,37 @@ fn compute_url_boost(url: &str, title: &str, query_lower: &str, query_terms: &[&
 
     let domain_lower = domain.to_lowercase();
     let domain_bare = domain_lower.strip_prefix("www.").unwrap_or(&domain_lower);
-
     let domain_name = domain_bare.split('.').next().unwrap_or(domain_bare);
+    let path_lower = path.to_lowercase();
+    let title_lower = title.to_lowercase();
 
-    if query_terms.len() == 1 {
-        if domain_name == query_lower {
-            boost += DOMAIN_MATCH_BOOST;
-        } else if domain_bare.starts_with(&format!("{}.", query_lower)) {
-            boost += DOMAIN_MATCH_BOOST * 0.5;
+    if is_junk_url(&path_lower, title) {
+        boost += JUNK_URL_PENALTY;
+    }
+
+    if is_error_page(&title_lower) {
+        boost += ERROR_PAGE_PENALTY;
+    }
+
+    let query_no_spaces: String = query_lower.chars().filter(|c| !c.is_whitespace()).collect();
+
+    if domain_name == query_no_spaces || domain_name == query_lower {
+        boost += DOMAIN_EXACT_BOOST;
+    } else if query_terms.len() == 1 {
+        if domain_name.starts_with(query_lower) && query_lower.len() >= 3 {
+            let coverage = query_lower.len() as f64 / domain_name.len() as f64;
+            boost += DOMAIN_PREFIX_BOOST * coverage;
+        } else if query_lower.starts_with(domain_name) && domain_name.len() >= 3 {
+            let coverage = domain_name.len() as f64 / query_lower.len() as f64;
+            boost += DOMAIN_PREFIX_BOOST * coverage * 0.5;
         }
     } else {
         for term in query_terms {
             if domain_name == *term {
-                boost += DOMAIN_MATCH_BOOST * 0.3;
+                boost += DOMAIN_EXACT_BOOST * 0.4;
+                break;
+            } else if term.len() >= 3 && domain_name.starts_with(*term) {
+                boost += DOMAIN_PREFIX_BOOST * 0.3;
                 break;
             }
         }
@@ -101,18 +125,98 @@ fn compute_url_boost(url: &str, title: &str, query_lower: &str, query_terms: &[&
     } else {
         let depth = path.matches('/').count();
         if depth <= 2 {
-            boost += HOMEPAGE_BOOST * 0.3;
+            boost += SHALLOW_PATH_BOOST;
+        } else if depth >= 5 {
+            boost += DEEP_PATH_PENALTY;
         }
     }
 
-    let title_lower = title.to_lowercase();
     if query_terms.len() == 1 && title_lower.starts_with(query_lower) {
         boost += TITLE_EXACT_BOOST;
     } else if title_lower.contains(query_lower) {
         boost += TITLE_EXACT_BOOST * 0.5;
+    } else {
+        let title_no_spaces: String = title_lower
+            .chars()
+            .filter(|c| c.is_alphanumeric() || c.is_whitespace())
+            .collect();
+        if title_no_spaces.contains(&query_no_spaces) {
+            boost += TITLE_EXACT_BOOST * 0.4;
+        }
+    }
+
+    for term in query_terms {
+        if term.len() >= 3 {
+            for word in title_lower.split(|c: char| !c.is_alphanumeric()) {
+                if word.starts_with(*term) && word != *term && word.len() > term.len() {
+                    let coverage = term.len() as f64 / word.len() as f64;
+                    boost += TITLE_WORD_PREFIX_BOOST * coverage;
+                    break;
+                }
+            }
+        }
     }
 
     boost
+}
+
+fn is_junk_url(path_lower: &str, title: &str) -> bool {
+    static WIKI_JUNK: &[&str] = &[
+        "/wiki/file:",
+        "/wiki/talk:",
+        "/wiki/user:",
+        "/wiki/user_talk:",
+        "/wiki/wikipedia:",
+        "/wiki/template:",
+        "/wiki/category:",
+        "/wiki/special:",
+        "/wiki/help:",
+        "/wiki/portal:",
+        "/wiki/draft:",
+        "/wiki/module:",
+    ];
+    for prefix in WIKI_JUNK {
+        if path_lower.contains(prefix) {
+            return true;
+        }
+    }
+
+    if title.starts_with("File:") || title.starts_with("Talk:") || title.starts_with("User:") {
+        return true;
+    }
+
+    let ext_junk = [".flac", ".mp3", ".wav", ".ogg", ".pdf", ".zip"];
+    for ext in &ext_junk {
+        if path_lower.ends_with(ext) {
+            return true;
+        }
+    }
+
+    false
+}
+
+fn is_error_page(title_lower: &str) -> bool {
+    static ERROR_PATTERNS: &[&str] = &[
+        "502: bad gateway",
+        "502 bad gateway",
+        "503 service",
+        "504 gateway",
+        "404 not found",
+        "403 forbidden",
+        "500 internal",
+        "wikimedia error",
+        "error 502",
+        "error 503",
+        "error 404",
+        "page not found",
+        "access denied",
+    ];
+    for pat in ERROR_PATTERNS {
+        if title_lower.contains(pat) {
+            return true;
+        }
+    }
+    false
 }
 
 fn parse_domain_path(url: &str) -> Option<(String, String)> {
