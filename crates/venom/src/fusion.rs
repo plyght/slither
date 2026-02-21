@@ -337,7 +337,7 @@ fn dedup_by_domain(results: Vec<SearchResult>, query_lower: &str) -> Vec<SearchR
                 || domain_name == query_lower
                 || (query_lower.len() >= 4 && domain_name.starts_with(query_lower)));
 
-        let max_per_domain: usize = if is_nav_match { 5 } else { 3 };
+        let max_per_domain: usize = if is_nav_match { 10 } else { 3 };
 
         let count = domain_counts.entry(root).or_insert(0);
         if *count < max_per_domain {
