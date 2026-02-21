@@ -7,6 +7,7 @@ const RRF_K: usize = 60;
 const DOMAIN_MATCH_BOOST: f64 = 0.012;
 const HOMEPAGE_BOOST: f64 = 0.006;
 const TITLE_EXACT_BOOST: f64 = 0.008;
+const MULTI_SOURCE_BOOST: f64 = 0.01;
 
 pub fn reciprocal_rank_fusion(
     lists: &[Vec<SearchResult>],
@@ -15,11 +16,13 @@ pub fn reciprocal_rank_fusion(
 ) -> Vec<SearchResult> {
     let mut scores: HashMap<u64, f64> = HashMap::new();
     let mut doc_map: HashMap<u64, SearchResult> = HashMap::new();
+    let mut source_count: HashMap<u64, usize> = HashMap::new();
 
     for list in lists {
         for (rank, result) in list.iter().enumerate() {
             let score = 1.0 / (RRF_K + rank + 1) as f64;
             *scores.entry(result.doc_id).or_insert(0.0) += score;
+            *source_count.entry(result.doc_id).or_insert(0) += 1;
             doc_map
                 .entry(result.doc_id)
                 .or_insert_with(|| result.clone());
@@ -30,6 +33,11 @@ pub fn reciprocal_rank_fusion(
     let query_terms: Vec<&str> = query_lower.split_whitespace().collect();
 
     for (doc_id, score) in scores.iter_mut() {
+        let sources = source_count.get(doc_id).copied().unwrap_or(1);
+        if sources > 1 {
+            *score += MULTI_SOURCE_BOOST * (sources - 1) as f64;
+        }
+
         if let Some(result) = doc_map.get(doc_id) {
             let boost = compute_url_boost(&result.url, &result.title, &query_lower, &query_terms);
             *score += boost;

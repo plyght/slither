@@ -1,9 +1,11 @@
 pub mod fusion;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use slither_core::{Document, SearchMode, SearchQuery, SearchResult, SlitherResult};
 use tracing::debug;
+
+const HYBRID_CANDIDATE_POOL: usize = 200;
 
 pub struct Ranker {
     pub index: tome::Index,
@@ -45,10 +47,22 @@ impl Ranker {
             }
             SearchMode::Hybrid => {
                 debug!(query = %query.text, limit = query.limit, "hybrid search");
-                let text_results = self.index.search(&query.text, query.limit)?;
+
+                let pool = HYBRID_CANDIDATE_POOL.max(query.limit * 4);
+                let text_results = self.index.search(&query.text, pool)?;
+
+                let candidate_ids: HashSet<u64> = text_results.iter().map(|r| r.doc_id).collect();
+
                 let embedding = self.embedder.embed_text(&query.text)?;
-                let vector_hits = self.embedder.search(&embedding, query.limit)?;
+
+                let vector_hits = if candidate_ids.is_empty() {
+                    self.embedder.search(&embedding, query.limit)?
+                } else {
+                    self.embedder
+                        .search_filtered(&embedding, pool, &candidate_ids)?
+                };
                 let semantic_results = self.hits_to_results(vector_hits);
+
                 Ok(fusion::reciprocal_rank_fusion(
                     &[text_results, semantic_results],
                     query.limit,

@@ -1,27 +1,15 @@
-// Custom binary vector store for iris.
-//
-// Two files live alongside the ONNX model:
-//   vectors.bin  — fixed-header followed by packed f32 arrays
-//   vecmap.bin   — parallel array of u64 doc_ids (one per stored vector)
-//
-// vectors.bin layout
-// ──────────────────
-//   [0..8]   magic     : b"SLITHVEC"
-//   [8..12]  version   : u32 LE  (= 1)
-//   [12..20] count     : u64 LE  (number of stored vectors)
-//   [20..24] dimensions: u32 LE
-//   [24..]   f32 data  : count × dimensions f32 values (LE), row-major
-//
-// vecmap.bin layout
-// ─────────────────
-//   [0..] u64 LE doc_ids, one per vector, same order as vectors.bin
+// vectors.bin layout:
+//   [0..8] b"SLITHVEC"  [8..12] u32 version  [12..20] u64 count  [20..24] u32 dims
+//   [24..] packed f32 data (count × dims), row-major LE
+// vecmap.bin layout:
+//   [0..] u64 LE doc_ids, one per vector, same order
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use memmap2::Mmap;
 use slither_core::{EmbedderConfig, SlitherError};
-use std::collections::HashSet;
+use std::collections::{BinaryHeap, HashSet};
 use std::fs::{File, OpenOptions};
-use std::io::{Cursor, Read, Seek, SeekFrom, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
 use tracing::debug;
 
@@ -35,6 +23,26 @@ pub(crate) struct VectorStorage {
     dimensions: usize,
     vector_count: u64,
     stored_ids: HashSet<u64>,
+}
+
+#[derive(PartialEq)]
+struct MinScoreEntry(f32, u64);
+
+impl Eq for MinScoreEntry {}
+
+impl PartialOrd for MinScoreEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for MinScoreEntry {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        other
+            .0
+            .partial_cmp(&self.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    }
 }
 
 impl VectorStorage {
@@ -140,7 +148,6 @@ impl VectorStorage {
         Ok(count)
     }
 
-    /// Append `vector` to vectors.bin and record `doc_id` in vecmap.bin.
     pub fn store(&mut self, doc_id: u64, vector: &[f32]) -> Result<(), SlitherError> {
         if self.stored_ids.contains(&doc_id) {
             return Ok(());
@@ -198,23 +205,40 @@ impl VectorStorage {
         Ok(())
     }
 
-    /// Brute-force scan.  Returns up to `limit` `(doc_id, score)` pairs
-    /// sorted descending by cosine similarity (dot product of normalised vecs).
     pub fn search(&self, query: &[f32], limit: usize) -> Result<Vec<(u64, f32)>, SlitherError> {
         if self.vector_count == 0 || limit == 0 {
             return Ok(Vec::new());
         }
-
         let count = self.vector_count as usize;
+        self.scan_vectors(query, limit, count, None)
+    }
+
+    pub fn search_filtered(
+        &self,
+        query: &[f32],
+        limit: usize,
+        allowed_ids: &HashSet<u64>,
+    ) -> Result<Vec<(u64, f32)>, SlitherError> {
+        if self.vector_count == 0 || limit == 0 || allowed_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let count = self.vector_count as usize;
+        self.scan_vectors(query, limit, count, Some(allowed_ids))
+    }
+
+    fn scan_vectors(
+        &self,
+        query: &[f32],
+        limit: usize,
+        count: usize,
+        filter: Option<&HashSet<u64>>,
+    ) -> Result<Vec<(u64, f32)>, SlitherError> {
         let dim = self.dimensions;
         let vector_bytes = dim * 4;
         let expected_data_len = HEADER_SIZE + count * vector_bytes;
 
         let vf =
             File::open(&self.vectors_path).map_err(|e| SlitherError::Storage(e.to_string()))?;
-        // SAFETY: we do not mutate the file while this mmap is live; the
-        // VectorStorage is behind an RwLock at the Iris level so concurrent
-        // writers are excluded when a reader holds the lock.
         let mmap = unsafe { Mmap::map(&vf) }.map_err(|e| SlitherError::Storage(e.to_string()))?;
 
         let mf = File::open(&self.vecmap_path).map_err(|e| SlitherError::Storage(e.to_string()))?;
@@ -229,44 +253,58 @@ impl VectorStorage {
             )));
         }
 
-        let mut vec_buf = vec![0.0f32; dim];
-        let mut scores: Vec<(u64, f32)> = Vec::with_capacity(count);
+        let data_region = &mmap[HEADER_SIZE..HEADER_SIZE + count * vector_bytes];
+        let ids_region = &mmap_ids[..];
+
+        let mut heap: BinaryHeap<MinScoreEntry> = BinaryHeap::with_capacity(limit + 1);
+        let mut threshold = f32::NEG_INFINITY;
 
         for i in 0..count {
-            let vec_offset = HEADER_SIZE + i * vector_bytes;
-            let vec_bytes = &mmap[vec_offset..vec_offset + vector_bytes];
-            read_f32_le(vec_bytes, &mut vec_buf);
-
             let id_offset = i * 8;
-            if id_offset + 8 > mmap_ids.len() {
+            if id_offset + 8 > ids_region.len() {
                 break;
             }
-            let doc_id = read_u64_le(&mmap_ids[id_offset..id_offset + 8]);
+            let doc_id =
+                u64::from_le_bytes(ids_region[id_offset..id_offset + 8].try_into().unwrap());
 
-            let score = crate::search::dot_product(query, &vec_buf);
-            scores.push((doc_id, score));
+            if let Some(allowed) = filter {
+                if !allowed.contains(&doc_id) {
+                    continue;
+                }
+            }
+
+            let vec_offset = i * vector_bytes;
+            let vec_bytes = &data_region[vec_offset..vec_offset + vector_bytes];
+
+            // x86_64 is little-endian and mmap is page-aligned, so the base is
+            // aligned.  Each row starts at a multiple of dim*4 bytes from the
+            // page-aligned base, so the pointer is always 4-byte aligned — safe
+            // to reinterpret as &[f32].
+            let vec_f32: &[f32] =
+                unsafe { std::slice::from_raw_parts(vec_bytes.as_ptr() as *const f32, dim) };
+
+            let score = crate::search::dot_product(query, vec_f32);
+
+            if score > threshold || heap.len() < limit {
+                heap.push(MinScoreEntry(score, doc_id));
+                if heap.len() > limit {
+                    heap.pop();
+                }
+                if heap.len() == limit {
+                    threshold = heap.peek().map(|e| e.0).unwrap_or(f32::NEG_INFINITY);
+                }
+            }
         }
 
-        scores.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        scores.truncate(limit);
-        Ok(scores)
+        let mut results: Vec<(u64, f32)> = heap
+            .into_iter()
+            .map(|MinScoreEntry(score, id)| (id, score))
+            .collect();
+        results.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        Ok(results)
     }
 
     pub fn vector_count(&self) -> u64 {
         self.vector_count
     }
-}
-
-#[inline]
-fn read_f32_le(src: &[u8], dst: &mut [f32]) {
-    let mut cursor = Cursor::new(src);
-    for v in dst.iter_mut() {
-        *v = cursor.read_f32::<LittleEndian>().unwrap_or(0.0);
-    }
-}
-
-#[inline]
-fn read_u64_le(src: &[u8]) -> u64 {
-    let mut cursor = Cursor::new(src);
-    cursor.read_u64::<LittleEndian>().unwrap_or(0)
 }

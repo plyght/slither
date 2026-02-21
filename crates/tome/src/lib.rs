@@ -174,7 +174,7 @@ impl Index {
         let seq = self.seq_to_doc_id.len() as u64;
         self.mem.add_document(seq, &all_tokens);
 
-        let body_preview: String = doc.body.chars().take(300).collect();
+        let body_preview: String = doc.body.chars().take(500).collect();
         let stored = StoredDoc {
             url: doc.url.clone(),
             title: doc.title.clone(),

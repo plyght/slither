@@ -42,6 +42,17 @@ impl Iris {
         self.storage.read().search(query_vector, limit)
     }
 
+    pub fn search_filtered(
+        &self,
+        query_vector: &[f32],
+        limit: usize,
+        allowed_ids: &std::collections::HashSet<u64>,
+    ) -> Result<Vec<(u64, f32)>, SlitherError> {
+        self.storage
+            .read()
+            .search_filtered(query_vector, limit, allowed_ids)
+    }
+
     pub fn vector_count(&self) -> u64 {
         self.storage.read().vector_count()
     }
