@@ -156,7 +156,7 @@ pub async fn search(
 ) -> SlitherResult<()> {
     let index = Index::open(Path::new(&config.index.data_dir))?;
     let embedder = Iris::new(config.embedder.clone())?;
-    let ranker = Ranker::new(index, embedder);
+    let mut ranker = Ranker::new(index, embedder);
 
     let results = ranker.search(&query, mode)?;
 

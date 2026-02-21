@@ -11,6 +11,8 @@ pub struct Ranker {
     pub index: tome::Index,
     embedder: iris::Iris,
     doc_metadata: HashMap<u64, RankerDocMeta>,
+    index_path: std::path::PathBuf,
+    last_reload_mtime: std::time::SystemTime,
 }
 
 #[derive(Clone)]
@@ -22,18 +24,37 @@ struct RankerDocMeta {
 
 impl Ranker {
     pub fn new(index: tome::Index, embedder: iris::Iris) -> Self {
+        let index_path = index.data_dir().to_path_buf();
+        let last_reload_mtime = std::fs::metadata(&index_path)
+            .and_then(|m| m.modified())
+            .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
         Self {
             index,
             embedder,
             doc_metadata: HashMap::new(),
+            index_path,
+            last_reload_mtime,
         }
     }
 
+    fn check_and_reload(&mut self) -> SlitherResult<()> {
+        let current_mtime = std::fs::metadata(&self.index_path)
+            .and_then(|m| m.modified())
+            .unwrap_or(self.last_reload_mtime);
+
+        if current_mtime > self.last_reload_mtime {
+            self.index = tome::Index::open(&self.index_path)?;
+            self.last_reload_mtime = current_mtime;
+        }
+        Ok(())
+    }
+
     pub fn search(
-        &self,
+        &mut self,
         query: &SearchQuery,
         mode: SearchMode,
     ) -> SlitherResult<Vec<SearchResult>> {
+        self.check_and_reload()?;
         match mode {
             SearchMode::Text => {
                 debug!(query = %query.text, limit = query.limit, "text search");

@@ -248,7 +248,7 @@ async fn search_handler(
         limit,
     };
 
-    let ranker = rankers.lock().await;
+    let mut ranker = rankers.lock().await;
 
     match ranker.search(&query, mode) {
         Ok(results) => {
