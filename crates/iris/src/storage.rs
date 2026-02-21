@@ -92,9 +92,15 @@ impl VectorStorage {
             vectors_path
         );
 
-        let hnsw_index = if vector_count > 1000 {
+        let hnsw_index = if vector_count > 1000 && vector_count <= 100_000 {
             Self::build_hnsw(&vectors_path, &vecmap_path, dimensions, vector_count)
         } else {
+            if vector_count > 100_000 {
+                info!(
+                    "skipping HNSW build for {} vectors (too large for available memory), using brute-force",
+                    vector_count
+                );
+            }
             None
         };
 
