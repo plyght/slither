@@ -53,11 +53,12 @@ impl Ranker {
 
                 let max_bm25 = text_results.first().map(|r| r.score).unwrap_or(0.0);
                 let score_floor = max_bm25 * 0.3;
-                let candidate_ids: HashSet<u64> = text_results
-                    .iter()
+                let text_filtered: Vec<SearchResult> = text_results
+                    .into_iter()
                     .filter(|r| r.score >= score_floor)
-                    .map(|r| r.doc_id)
                     .collect();
+
+                let candidate_ids: HashSet<u64> = text_filtered.iter().map(|r| r.doc_id).collect();
 
                 let embedding = self.embedder.embed_text(&query.text)?;
 
@@ -70,7 +71,7 @@ impl Ranker {
                 let semantic_results = self.hits_to_results(vector_hits);
 
                 Ok(fusion::reciprocal_rank_fusion(
-                    &[text_results, semantic_results],
+                    &[text_filtered, semantic_results],
                     query.limit,
                     &query.text,
                 ))

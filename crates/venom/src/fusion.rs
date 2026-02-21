@@ -68,7 +68,7 @@ pub fn reciprocal_rank_fusion(
     });
 
     fused = dedup_by_url(fused);
-    fused = dedup_by_domain(fused);
+    fused = dedup_by_domain(fused, &query_lower);
     fused.truncate(limit);
     fused
 }
@@ -302,21 +302,33 @@ fn dedup_by_url(results: Vec<SearchResult>) -> Vec<SearchResult> {
     deduped
 }
 
-fn dedup_by_domain(results: Vec<SearchResult>) -> Vec<SearchResult> {
+fn dedup_by_domain(results: Vec<SearchResult>, query_lower: &str) -> Vec<SearchResult> {
     let mut domain_counts: HashMap<String, usize> = HashMap::new();
     let mut deduped = Vec::with_capacity(results.len());
 
+    let query_no_spaces: String = query_lower.chars().filter(|c| !c.is_whitespace()).collect();
+
     for result in results {
-        let domain = match parse_domain_path(&result.url) {
+        let (root, domain_name) = match parse_domain_path(&result.url) {
             Some((d, _)) => {
                 let d_lower = d.to_lowercase();
-                root_domain(&d_lower).to_string()
+                let bare = d_lower.strip_prefix("www.").unwrap_or(&d_lower);
+                let name = bare.split('.').next().unwrap_or(bare).to_string();
+                let root = root_domain(&d_lower).to_string();
+                (root, name)
             }
-            None => String::new(),
+            None => (String::new(), String::new()),
         };
 
-        let count = domain_counts.entry(domain).or_insert(0);
-        if *count < 3 {
+        let is_nav_match = !domain_name.is_empty()
+            && (domain_name == query_no_spaces
+                || domain_name == query_lower
+                || (query_lower.len() >= 4 && domain_name.starts_with(query_lower)));
+
+        let max_per_domain: usize = if is_nav_match { 5 } else { 3 };
+
+        let count = domain_counts.entry(root).or_insert(0);
+        if *count < max_per_domain {
             *count += 1;
             deduped.push(result);
         }
