@@ -14,7 +14,7 @@ use slither_core::{Document, IndexConfig, SearchQuery, SearchResult, SlitherErro
 use bm25::Bm25Params;
 use index::{flush_index, hash_term, InMemoryIndex};
 use snippet::extract_snippet;
-use storage::{DocStoreReader, DocStoreWriter, IndexReader, StoredDoc};
+use storage::{DocStoreReader, DocStoreWriter, IndexReader, Posting, StoredDoc};
 use tokenizer::{tokenize, tokenize_query};
 
 const INDEX_FILE: &str = "index.bin";
@@ -37,6 +37,7 @@ pub struct Index {
     doc_id_to_seq: HashMap<u64, u64>,
     seq_to_doc_id: Vec<u64>,
     flushed: bool,
+    crawl_mode: bool,
 }
 
 impl Index {
@@ -92,6 +93,54 @@ impl Index {
             doc_id_to_seq,
             seq_to_doc_id,
             flushed,
+            crawl_mode: false,
+        })
+    }
+
+    pub fn open_for_crawl(path: &Path) -> SlitherResult<Self> {
+        std::fs::create_dir_all(path)?;
+
+        let meta_path = path.join(META_FILE);
+        let docs_path = path.join(DOCS_FILE);
+        let index_path = path.join(INDEX_FILE);
+
+        let mut mem = InMemoryIndex::new();
+        let mut doc_id_to_seq: HashMap<u64, u64> = HashMap::new();
+        let mut seq_to_doc_id: Vec<u64> = Vec::new();
+        let doc_store_writer;
+
+        if meta_path.exists() && docs_path.exists() && index_path.exists() {
+            let meta_bytes = std::fs::read(&meta_path)?;
+            let meta: IndexMeta = serde_json::from_slice(&meta_bytes)?;
+
+            mem.doc_lengths = meta.doc_lengths.clone();
+            mem.total_doc_len = meta.total_doc_len;
+
+            for (seq, &doc_id) in meta.doc_ids.iter().enumerate() {
+                doc_id_to_seq.insert(doc_id, seq as u64);
+                seq_to_doc_id.push(doc_id);
+            }
+
+            doc_store_writer = DocStoreWriter::load_existing(docs_path)?;
+
+            info!(
+                doc_count = meta.doc_count,
+                "loaded existing tome index (crawl mode, skipping postings) at {}",
+                path.display()
+            );
+        } else {
+            doc_store_writer = DocStoreWriter::new(docs_path);
+            info!("created new tome index at {}", path.display());
+        }
+
+        Ok(Self {
+            dir: path.to_path_buf(),
+            mem,
+            doc_store_writer,
+            doc_id_to_seq,
+            seq_to_doc_id,
+            flushed: false,
+            crawl_mode: true,
         })
     }
 
@@ -328,7 +377,25 @@ impl Index {
         );
         writer.flush()?;
 
-        flush_index(&self.mem, &index_path, &docs_path, &terms_path)?;
+        if self.crawl_mode && index_path.exists() {
+            let old_reader = IndexReader::open(&index_path)?;
+            let mut merged: HashMap<u64, Vec<Posting>> =
+                old_reader.iter_all().into_iter().collect();
+            for (hash, new_postings) in &self.mem.postings {
+                merged
+                    .entry(*hash)
+                    .or_default()
+                    .extend_from_slice(new_postings);
+            }
+            let mut merged_mem = InMemoryIndex::new();
+            merged_mem.postings = merged;
+            merged_mem.term_text = self.mem.term_text.clone();
+            merged_mem.doc_lengths = self.mem.doc_lengths.clone();
+            merged_mem.total_doc_len = self.mem.total_doc_len;
+            flush_index(&merged_mem, &index_path, &docs_path, &terms_path)?;
+        } else {
+            flush_index(&self.mem, &index_path, &docs_path, &terms_path)?;
+        }
 
         let meta = IndexMeta {
             doc_count: self.seq_to_doc_id.len() as u64,

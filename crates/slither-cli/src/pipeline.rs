@@ -22,7 +22,7 @@ pub async fn crawl(config: SlitherConfig, seeds: Vec<Seed>) -> SlitherResult<()>
     std::fs::create_dir_all(&config.embedder.data_dir)?;
 
     let transformer = Fang::new(FangConfig::default());
-    let index = Index::open(Path::new(&config.index.data_dir))?;
+    let index = Index::open_for_crawl(Path::new(&config.index.data_dir))?;
     let embedder = Iris::new(config.embedder.clone())?;
     let known_ids = index.known_doc_ids();
     let mut ranker = Ranker::new(index, embedder);
@@ -31,7 +31,7 @@ pub async fn crawl(config: SlitherConfig, seeds: Vec<Seed>) -> SlitherResult<()>
     std::fs::create_dir_all(&favicon_dir)?;
 
     let snake = Crawler::new(config.crawler.clone()).with_known_urls(known_ids);
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<RawPage>(256);
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<RawPage>(64);
 
     let mut sorted_seeds = seeds;
     sorted_seeds.sort_by(|a, b| b.priority().cmp(&a.priority()));

@@ -49,6 +49,8 @@ impl EmbeddingModel {
 
         let session = Session::builder()
             .map_err(|e| SlitherError::Embedding(e.to_string()))?
+            .with_intra_threads(1)
+            .map_err(|e| SlitherError::Embedding(e.to_string()))?
             .commit_from_file(model_path)
             .map_err(|e| SlitherError::Embedding(e.to_string()))?;
 

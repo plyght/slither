@@ -7,7 +7,7 @@ LOG="/var/log/slither-crawl.log"
 echo "$(date -Iseconds) Starting crawl cycle using seeds.json" >> "$LOG"
 
 timeout --signal=INT 3600 /usr/local/bin/slither --config "$CONFIG" crawl --seeds \
-    --concurrent 20 >> "$LOG" 2>&1 || true
+    --concurrent 10 >> "$LOG" 2>&1 || true
 
 echo "$(date -Iseconds) Crawl cycle complete" >> "$LOG"
 
