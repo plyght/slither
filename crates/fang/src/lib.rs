@@ -79,15 +79,22 @@ impl Fang {
         let title = extract_title(&document);
         let meta_description = extract_meta_description(&document);
         let headings = extract_headings(&document);
-        let body = extract_clean_text(&document);
+        let mut body = extract_clean_text(&document);
 
         if body.len() < self.config.min_content_length {
-            warn!(
-                url = %page.url,
-                body_len = body.len(),
-                min = self.config.min_content_length,
-                "page body below minimum content length"
-            );
+            if let Some(meta) = &meta_description {
+                if !meta.is_empty() {
+                    body = meta.clone();
+                }
+            }
+            if body.len() < self.config.min_content_length {
+                warn!(
+                    url = %page.url,
+                    body_len = body.len(),
+                    min = self.config.min_content_length,
+                    "page body below minimum content length"
+                );
+            }
         }
 
         let body = if body.len() > self.config.max_content_length {
