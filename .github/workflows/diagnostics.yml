@@ -1,0 +1,47 @@
+name: Server Diagnostics
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run diagnostics and add local SSH key
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          envs: DEPLOY_PASSWORD
+          script: |
+            echo "=== DISK ==="
+            df -h / /mnt/r2-slither 2>/dev/null || df -h /
+            echo ""
+            echo "=== MEMORY ==="
+            free -h
+            echo ""
+            echo "=== DATA DIR SIZE ==="
+            du -sh /mnt/r2-slither/* 2>/dev/null
+            du -sh /mnt/r2-slither/ 2>/dev/null
+            echo ""
+            echo "=== INDEX META ==="
+            cat /mnt/r2-slither/index/meta.json 2>/dev/null || echo "no meta.json"
+            echo ""
+            echo "=== CRAWL TIMER ==="
+            systemctl status slither-crawl-job.timer --no-pager 2>/dev/null || echo "no timer"
+            echo ""
+            echo "=== SERVE STATUS ==="
+            systemctl status slither-serve --no-pager 2>/dev/null | head -20
+            echo ""
+            echo "=== LAST 40 CRAWL LOG LINES ==="
+            tail -40 /var/log/slither-crawl.log 2>/dev/null || echo "no crawl log"
+            echo ""
+            echo "=== ADDING LOCAL SSH KEY ==="
+            mkdir -p ~/.ssh
+            echo "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJyG2h7os1FSyvq5vIEVGHLS57RqKbUyAnxM5wV5i2xs nico.c.jaffer@gmail.com" >> ~/.ssh/authorized_keys
+            sort -u ~/.ssh/authorized_keys -o ~/.ssh/authorized_keys
+            chmod 600 ~/.ssh/authorized_keys
+            echo "Key added successfully"
+        env:
+          DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
