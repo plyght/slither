@@ -13,7 +13,7 @@ const SHALLOW_PATH_BOOST: f64 = 0.004;
 const TITLE_EXACT_BOOST: f64 = 0.02;
 const TITLE_WORD_PREFIX_BOOST: f64 = 0.01;
 const MULTI_SOURCE_BOOST: f64 = 0.01;
-const JUNK_URL_PENALTY: f64 = -0.03;
+const JUNK_URL_PENALTY: f64 = -0.06;
 const DEEP_PATH_PENALTY: f64 = -0.006;
 const ERROR_PAGE_PENALTY: f64 = -0.025;
 const PROFILE_PAGE_PENALTY: f64 = -0.015;
@@ -186,6 +186,14 @@ fn compute_url_boost(url: &str, title: &str, query_lower: &str, query_terms: &[&
     boost
 }
 
+pub fn is_junk_candidate(url: &str, title: &str) -> bool {
+    let path_lower = match parse_domain_path(url) {
+        Some((_, p)) => p.to_lowercase(),
+        None => return false,
+    };
+    is_junk_url(&path_lower, title)
+}
+
 fn is_junk_url(path_lower: &str, title: &str) -> bool {
     static WIKI_JUNK: &[&str] = &[
         "/wiki/file:",
@@ -210,6 +218,7 @@ fn is_junk_url(path_lower: &str, title: &str) -> bool {
     // Generic boilerplate path patterns — listing/meta pages with no real content
     static BOILERPLATE_PATHS: &[&str] = &[
         "/pulls",
+        "/pull/",
         "/forks",
         "/stargazers",
         "/watchers",
@@ -223,6 +232,12 @@ fn is_junk_url(path_lower: &str, title: &str) -> bool {
         "/actions",
         "/runs/",
         "/workflows/",
+        "/issues?",
+        "/tags",
+        "/releases/tag/",
+        "/blame/",
+        "/raw/",
+        "/tree/",
     ];
     for pat in BOILERPLATE_PATHS {
         if path_lower.contains(pat) {

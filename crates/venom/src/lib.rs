@@ -70,14 +70,34 @@ impl Ranker {
                 debug!(query = %query.text, limit = query.limit, "hybrid search");
 
                 let pool = HYBRID_CANDIDATE_POOL.max(query.limit * 4);
-                let text_results = self.index.search(&query.text, pool)?;
+
+                let raw_text_results = self.index.search(&query.text, pool * 2)?;
+
+                let text_results: Vec<SearchResult> = raw_text_results
+                    .into_iter()
+                    .filter(|r| !fusion::is_junk_candidate(&r.url, &r.title))
+                    .take(pool)
+                    .collect();
 
                 let candidate_ids: HashSet<u64> = text_results.iter().map(|r| r.doc_id).collect();
 
                 let embedding = self.embedder.embed_text(&query.text)?;
 
+                let query_terms: Vec<&str> = query.text.split_whitespace().collect();
+
                 let vector_hits = if candidate_ids.is_empty() {
                     self.embedder.search(&embedding, query.limit)?
+                } else if query_terms.len() <= 2 {
+                    let mut hits = self
+                        .embedder
+                        .search_filtered(&embedding, pool, &candidate_ids)?;
+                    let unconstrained = self.embedder.search(&embedding, pool / 4)?;
+                    for hit in unconstrained {
+                        if !candidate_ids.contains(&hit.0) {
+                            hits.push(hit);
+                        }
+                    }
+                    hits
                 } else {
                     self.embedder
                         .search_filtered(&embedding, pool, &candidate_ids)?

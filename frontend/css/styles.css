@@ -639,6 +639,12 @@ body[data-state="results"] .results-section {
     font-weight: 500;
     color: var(--text-primary);
     letter-spacing: 0.01em;
+    text-decoration: none;
+}
+
+.domain-name:hover {
+    text-decoration: underline;
+    color: var(--accent);
 }
 
 .domain-count {

@@ -197,7 +197,7 @@
                     html += '<div class="domain-group" style="--i:' + globalIdx + '">' +
                         '<div class="domain-header">' +
                         '<img class="domain-favicon" src="' + faviconSrc + '" alt="" width="16" height="16" loading="lazy" onerror="this.style.display=\'none\'">' +
-                        '<span class="domain-name">' + escapeHtml(group.domain) + '</span>' +
+                        '<a class="domain-name" href="https://' + escapeHtml(group.domain) + '/" target="_blank" rel="noopener">' + escapeHtml(group.domain) + '</a>' +
                         '<span class="domain-count">' + group.results.length + '</span>' +
                         '</div>' +
                         '<div class="domain-results">';
