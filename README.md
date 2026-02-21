@@ -142,9 +142,9 @@ Currently running on a Hetzner Cloud server (CX22, 4GB RAM, Ubuntu 24.04) with C
 ```
 /usr/local/bin/slither              # Binary
 /usr/local/bin/slither-crawl-loop   # Crawl automation script
-/home/nico/slither/slither.json     # Config
-/home/nico/slither/models/          # ONNX model files
-/home/nico/slither/frontend/        # Search frontend (served by Caddy)
+/home/app/slither/slither.json     # Config
+/home/app/slither/models/          # ONNX model files
+/home/app/slither/frontend/        # Search frontend (served by Caddy)
   index.html                        # Main page
   css/styles.css                    # Styles
   js/app.js                         # Client-side logic
@@ -188,7 +188,7 @@ Caddy handles TLS termination, static file serving, and reverse proxying API rou
 search.peril.lol {
     tls plyght@peril.lol
 
-    root * /home/nico/slither/frontend
+    root * /home/app/slither/frontend
     encode gzip zstd
 
     @api {
@@ -254,7 +254,7 @@ sudo apt install -y caddy
 sudo systemctl enable --now caddy
 
 # Ensure Caddy can read the frontend files:
-chmod o+x /home/nico/
+chmod o+x /home/app/
 ```
 
 ## Development
