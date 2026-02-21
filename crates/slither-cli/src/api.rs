@@ -183,6 +183,7 @@ pub async fn serve(config: SlitherConfig, host: &str, port: u16) -> SlitherResul
         )
         .route("/admin/crawl", post(admin_crawl_handler))
         .route("/admin/status", get(admin_status_handler))
+        .route("/admin/reload", post(admin_reload_handler))
         .layer(axum::middleware::from_fn_with_state(
             admin_state.clone(),
             auth_middleware,
@@ -217,6 +218,7 @@ pub async fn serve(config: SlitherConfig, host: &str, port: u16) -> SlitherResul
     println!("  DELETE /admin/seeds (X-Api-Key required)");
     println!("  POST /admin/crawl (X-Api-Key required)");
     println!("  GET /admin/status (X-Api-Key required)");
+    println!("  POST /admin/reload (X-Api-Key required) - reload index without restart");
     if std::path::Path::new(&index_file).exists() {
         println!("  Static files: {}", static_dir);
     } else {
@@ -371,6 +373,26 @@ async fn admin_status_handler(State(state): State<AdminState>) -> Json<ApiRespon
         seed_count,
         doc_count,
     }))
+}
+
+async fn admin_reload_handler(State(state): State<AdminState>) -> Json<ApiResponse<String>> {
+    let config = state.config.clone();
+    let new_index = match Index::open(std::path::Path::new(&config.index.data_dir)) {
+        Ok(idx) => idx,
+        Err(e) => return Json(ApiResponse::err(&format!("failed to open index: {}", e))),
+    };
+    let new_embedder = match Iris::new(config.embedder.clone()) {
+        Ok(emb) => emb,
+        Err(e) => return Json(ApiResponse::err(&format!("failed to open embedder: {}", e))),
+    };
+    let new_ranker = Ranker::new(new_index, new_embedder);
+
+    let mut guard = state.ranker.lock().await;
+    *guard = new_ranker;
+    drop(guard);
+
+    let doc_count = state.ranker.lock().await.index.doc_count();
+    Json(ApiResponse::ok(format!("index reloaded, {} documents", doc_count)))
 }
 
 #[derive(Debug, Deserialize)]
