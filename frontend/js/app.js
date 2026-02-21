@@ -8,9 +8,6 @@
     var currentOffset = 0;
     var currentQuery = '';
     var limit = 20;
-    var suggestBox;
-    var suggestTimer = null;
-    var suggestController = null;
     var currentController = null;
     var docCount = null;
 
@@ -160,47 +157,11 @@
             '</article>';
     }
 
-    function fetchSuggestions(query) {
-        if (suggestController) suggestController.abort();
-        suggestController = new AbortController();
-
-        fetch(API_BASE + '/suggest?q=' + encodeURIComponent(query) + '&limit=5', {
-            signal: suggestController.signal
-        })
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-            if (data.success && data.data && data.data.length > 0) {
-                renderSuggestions(data.data, query);
-            } else {
-                hideSuggestions();
-            }
-        })
-        .catch(function() {});
-    }
-
-    function renderSuggestions(titles, query) {
-        acHide();
-        var html = '';
-        for (var i = 0; i < titles.length; i++) {
-            html += '<div class="suggest-item" role="option" data-index="' + i + '">' +
-                    escapeHtml(titles[i]) + '</div>';
-        }
-        suggestBox.innerHTML = html;
-        suggestBox.style.display = 'block';
-    }
-
-    function hideSuggestions() {
-        if (!suggestBox) return;
-        suggestBox.innerHTML = '';
-        suggestBox.style.display = 'none';
-    }
-
     function doSearch(query, mode, pushState) {
         if (!query.trim()) return;
 
         currentOffset = 0;
         currentQuery = query.trim();
-        if (suggestBox) hideSuggestions();
 
         if (currentController) {
             currentController.abort();
@@ -343,7 +304,6 @@
         searchInput.value = '';
         updateClearBtn();
         acDismiss();
-        if (suggestBox) hideSuggestions();
         resultsList.innerHTML = '';
         resultsMeta.textContent = '';
         searchInput.focus();
@@ -436,12 +396,11 @@
         acController = new AbortController();
         acLastQuery = query;
 
-        var params = '?q=' + encodeURIComponent(query.trim()) + '&limit=6&mode=' + currentMode;
+        var params = '?q=' + encodeURIComponent(query.trim()) + '&limit=6&mode=text';
         fetch(API_BASE + '/search' + params, { signal: acController.signal })
             .then(function (r) { return r.json(); })
             .then(function (data) {
                 if (document.activeElement !== searchInput) return;
-                if (suggestBox && suggestBox.style.display === 'block') return;
                 if (data.success && data.data && data.data.length > 0) {
                     acRender(data.data, query);
                 } else {
@@ -468,7 +427,7 @@
         clearTimeout(acDebounceTimer);
         acDebounceTimer = setTimeout(function () {
             acFetch(val);
-        }, 250);
+        }, 150);
     }
 
     searchForm.addEventListener('submit', function (e) {
@@ -695,35 +654,6 @@
     function init() {
         fetchStats();
         startStatsPolling();
-
-        suggestBox = document.createElement('div');
-        suggestBox.className = 'suggest-box';
-        suggestBox.setAttribute('role', 'listbox');
-        searchInput.parentNode.style.position = 'relative';
-        searchInput.parentNode.appendChild(suggestBox);
-
-        searchInput.addEventListener('input', function () {
-            var val = searchInput.value.trim();
-            clearTimeout(suggestTimer);
-            if (val.length < 2) { hideSuggestions(); return; }
-            suggestTimer = setTimeout(function () { fetchSuggestions(val); }, 150);
-        });
-
-        suggestBox.addEventListener('click', function (e) {
-            var item = e.target.closest('.suggest-item');
-            if (item) {
-                searchInput.value = item.textContent;
-                hideSuggestions();
-                updateClearBtn();
-                doSearch(item.textContent, currentMode, true);
-            }
-        });
-
-        document.addEventListener('click', function (e) {
-            if (!searchInput.contains(e.target) && !suggestBox.contains(e.target)) {
-                hideSuggestions();
-            }
-        });
 
         var params = new URLSearchParams(window.location.search);
         var q = params.get('q');

@@ -22,6 +22,10 @@ impl Iris {
         })
     }
 
+    pub fn is_fallback(&self) -> bool {
+        self.model.read().is_fallback()
+    }
+
     pub fn embed_text(&self, text: &str) -> Result<Vec<f32>, SlitherError> {
         self.model.read().embed(text)
     }

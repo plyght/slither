@@ -64,9 +64,14 @@ impl Ranker {
                 debug!(query = %query.text, limit = query.limit, "semantic search");
                 let embedding = self.embedder.embed_text(&query.text)?;
                 let hits = self.embedder.search(&embedding, query.limit)?;
-                Ok(self.hits_to_results(hits))
+                Ok(self.hits_to_results(hits, &query.text))
             }
             SearchMode::Hybrid => {
+                if self.embedder.is_fallback() {
+                    debug!(query = %query.text, limit = query.limit, "hybrid->text fallback (no model)");
+                    return self.index.search(&query.text, query.limit);
+                }
+
                 debug!(query = %query.text, limit = query.limit, "hybrid search");
 
                 let pool = HYBRID_CANDIDATE_POOL.max(query.limit * 4);
@@ -91,7 +96,7 @@ impl Ranker {
                     let mut hits =
                         self.embedder
                             .search_filtered(&embedding, pool, &candidate_ids)?;
-                    let unconstrained = self.embedder.search(&embedding, pool / 4)?;
+                    let unconstrained = self.embedder.search(&embedding, pool / 8)?;
                     for hit in unconstrained {
                         if !candidate_ids.contains(&hit.0) {
                             hits.push(hit);
@@ -102,7 +107,7 @@ impl Ranker {
                     self.embedder
                         .search_filtered(&embedding, pool, &candidate_ids)?
                 };
-                let semantic_results = self.hits_to_results(vector_hits);
+                let semantic_results = self.hits_to_results(vector_hits, &query.text);
 
                 Ok(fusion::reciprocal_rank_fusion(
                     &[text_results, semantic_results],
@@ -118,7 +123,15 @@ impl Ranker {
             return Ok(());
         }
         self.index.index_document(doc)?;
-        let text = format!("{} {}", doc.title, doc.body);
+        let mut embed_parts = vec![doc.title.clone()];
+        if let Some(ref desc) = doc.meta_description {
+            embed_parts.push(desc.clone());
+        }
+        for h in &doc.headings {
+            embed_parts.push(h.clone());
+        }
+        embed_parts.push(doc.body.chars().take(512).collect());
+        let text = embed_parts.join(" ");
         let embedding = self.embedder.embed_text(&text)?;
         self.embedder.store_vector(doc.id, &embedding)?;
         let snippet: String = doc.body.chars().take(200).collect();
@@ -141,19 +154,24 @@ impl Ranker {
         self.index.flush()
     }
 
-    fn hits_to_results(&self, hits: Vec<(u64, f32)>) -> Vec<SearchResult> {
+    fn hits_to_results(&self, hits: Vec<(u64, f32)>, query: &str) -> Vec<SearchResult> {
         hits.into_iter()
             .filter_map(|(doc_id, score)| {
                 if let Some(meta) = self.doc_metadata.get(&doc_id) {
+                    let snippet = if query.is_empty() {
+                        meta.snippet.clone()
+                    } else {
+                        self.index.generate_snippet(&meta.snippet, query)
+                    };
                     Some(SearchResult {
                         doc_id,
                         url: meta.url.clone(),
                         title: meta.title.clone(),
-                        snippet: meta.snippet.clone(),
+                        snippet,
                         score,
                     })
                 } else if let Some((url, title, body)) = self.index.lookup_doc_meta(doc_id) {
-                    let snippet: String = body.chars().take(200).collect();
+                    let snippet = self.index.generate_snippet(&body, query);
                     Some(SearchResult {
                         doc_id,
                         url,

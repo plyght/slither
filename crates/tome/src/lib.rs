@@ -222,13 +222,30 @@ impl Index {
 
         let title_tokens = tokenize(&doc.title);
         let body_tokens = tokenize(&doc.body);
-        let mut all_tokens = title_tokens;
+
+        let mut all_tokens = Vec::with_capacity(title_tokens.len() * 3 + body_tokens.len() + 64);
+
+        for _ in 0..3 {
+            all_tokens.extend(title_tokens.iter().cloned());
+        }
+
+        for heading in &doc.headings {
+            let h_tokens = tokenize(heading);
+            for _ in 0..2 {
+                all_tokens.extend(h_tokens.iter().cloned());
+            }
+        }
+
+        if let Some(ref desc) = doc.meta_description {
+            all_tokens.extend(tokenize(desc));
+        }
+
         all_tokens.extend(body_tokens);
 
         let seq = self.seq_to_doc_id.len() as u64;
         self.mem.add_document(seq, &all_tokens);
 
-        let body_preview: String = doc.body.chars().take(500).collect();
+        let body_preview: String = doc.body.chars().take(1000).collect();
         let stored = StoredDoc {
             url: doc.url.clone(),
             title: doc.title.clone(),
@@ -258,11 +275,12 @@ impl Index {
         let avg_doc_len = self.mem.avg_doc_length();
 
         if self.flushed {
-            self.search_from_disk(&query_tokens, &original_tokens, limit, avg_doc_len)
+            self.search_from_disk(&query_tokens, &original_tokens, query, limit, avg_doc_len)
         } else {
             self.search_in_memory(
                 &query_tokens,
                 &original_tokens,
+                query,
                 limit,
                 doc_count,
                 avg_doc_len,
@@ -274,6 +292,7 @@ impl Index {
         &self,
         query_tokens: &[String],
         original_tokens: &[String],
+        query: &str,
         limit: usize,
         doc_count: usize,
         avg_doc_len: f64,
@@ -312,14 +331,7 @@ impl Index {
 
         for (seq, score) in ranked.iter_mut() {
             if let Ok(stored) = self.read_stored_doc(*seq) {
-                let title_lower = stored.title.to_lowercase();
-                let mut title_bonus = 0.0f64;
-                for token in original_tokens {
-                    if title_lower.contains(token.as_str()) {
-                        title_bonus += 0.15 * score.max(0.01);
-                    }
-                }
-                *score += title_bonus;
+                *score += compute_title_bonus(&stored.title, original_tokens, query, *score);
             }
         }
 
@@ -352,6 +364,7 @@ impl Index {
         &self,
         query_tokens: &[String],
         original_tokens: &[String],
+        query: &str,
         limit: usize,
         avg_doc_len: f64,
     ) -> SlitherResult<Vec<SearchResult>> {
@@ -396,14 +409,7 @@ impl Index {
 
         for (seq, score) in ranked.iter_mut() {
             if let Ok(stored) = doc_store.read(*seq) {
-                let title_lower = stored.title.to_lowercase();
-                let mut title_bonus = 0.0f64;
-                for token in original_tokens {
-                    if title_lower.contains(token.as_str()) {
-                        title_bonus += 0.15 * score.max(0.01);
-                    }
-                }
-                *score += title_bonus;
+                *score += compute_title_bonus(&stored.title, original_tokens, query, *score);
             }
         }
 
@@ -453,6 +459,11 @@ impl Index {
         let seq = self.doc_id_to_seq.get(&doc_id)?;
         let stored = self.read_stored_doc(*seq).ok()?;
         Some((stored.url, stored.title, stored.body))
+    }
+
+    pub fn generate_snippet(&self, body: &str, query: &str) -> String {
+        let (query_tokens, original_tokens) = tokenize_query_with_originals(query);
+        extract_snippet(body, &query_tokens, &original_tokens)
     }
 
     pub fn flush(&mut self) -> SlitherResult<()> {
@@ -509,6 +520,37 @@ impl Index {
         );
         Ok(())
     }
+}
+
+fn compute_title_bonus(
+    title: &str,
+    original_tokens: &[String],
+    raw_query: &str,
+    base_score: f64,
+) -> f64 {
+    let title_lower = title.to_lowercase();
+    let query_lower = raw_query.trim().to_lowercase();
+    let mut bonus = 0.0f64;
+
+    if query_lower.len() >= 3 && title_lower.contains(&query_lower) {
+        bonus += 0.50 * base_score.max(0.1);
+        if title_lower.starts_with(&query_lower) {
+            bonus += 0.20 * base_score.max(0.1);
+        }
+    } else {
+        let mut matched = 0usize;
+        for token in original_tokens {
+            if title_lower.contains(token.as_str()) {
+                matched += 1;
+                bonus += 0.35 * base_score.max(0.01);
+            }
+        }
+        if !original_tokens.is_empty() && matched == original_tokens.len() {
+            bonus += 0.15 * base_score.max(0.01);
+        }
+    }
+
+    bonus
 }
 
 pub struct Tome {

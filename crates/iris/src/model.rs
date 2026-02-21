@@ -68,6 +68,10 @@ impl EmbeddingModel {
         })
     }
 
+    pub fn is_fallback(&self) -> bool {
+        matches!(self.inner, ModelInner::Fallback)
+    }
+
     pub fn embed(&self, text: &str) -> Result<Vec<f32>, SlitherError> {
         match &self.inner {
             ModelInner::Fallback => Ok(fallback_embed(text, self.embedding_dim)),

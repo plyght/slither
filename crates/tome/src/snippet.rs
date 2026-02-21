@@ -1,5 +1,5 @@
-const SNIPPET_LEN: usize = 220;
-const WINDOW_STEP: usize = 40;
+const SNIPPET_LEN: usize = 300;
+const WINDOW_STEP: usize = 25;
 
 pub fn extract_snippet(body: &str, query_tokens: &[String], original_tokens: &[String]) -> String {
     if body.is_empty() {

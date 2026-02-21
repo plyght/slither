@@ -287,20 +287,18 @@ fn default_suggest_limit() -> usize {
 async fn suggest_handler(
     Query(params): Query<SuggestParams>,
     State(rankers): State<SharedRanker>,
-) -> Json<ApiResponse<Vec<String>>> {
+) -> Json<ApiResponse<Vec<SearchResultJson>>> {
     let q = params.q.trim();
     if q.len() < 2 {
         return Json(ApiResponse::ok(Vec::new()));
     }
     let limit = if params.limit == 0 { 5 } else { params.limit.min(10) };
-    let mut ranker = rankers.write().await;
-    match ranker.search(
-        &slither_core::SearchQuery { text: q.to_string(), limit },
-        slither_core::SearchMode::Text,
-    ) {
+    let ranker = rankers.read().await;
+    let results = ranker.index.search(q, limit);
+    match results {
         Ok(results) => {
-            let titles: Vec<String> = results.into_iter().map(|r| r.title).collect();
-            Json(ApiResponse::ok(titles))
+            let json_results: Vec<SearchResultJson> = results.into_iter().map(|r| r.into()).collect();
+            Json(ApiResponse::ok(json_results))
         }
         Err(_) => Json(ApiResponse::ok(Vec::new())),
     }
