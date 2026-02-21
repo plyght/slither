@@ -15,6 +15,7 @@ const JUNK_URL_PENALTY: f64 = -0.03;
 const DEEP_PATH_PENALTY: f64 = -0.006;
 const ERROR_PAGE_PENALTY: f64 = -0.025;
 const PROFILE_PAGE_PENALTY: f64 = -0.015;
+const TLD_BOOST: f64 = 0.015;
 
 pub fn reciprocal_rank_fusion(
     lists: &[Vec<SearchResult>],
@@ -103,6 +104,9 @@ fn compute_url_boost(url: &str, title: &str, query_lower: &str, query_terms: &[&
 
     if domain_name == query_no_spaces || domain_name == query_lower {
         boost += DOMAIN_EXACT_BOOST;
+        if is_preferred_tld(domain_bare) {
+            boost += TLD_BOOST;
+        }
     } else if query_terms.len() == 1 {
         if domain_name.starts_with(query_lower) && query_lower.len() >= 3 {
             let coverage = query_lower.len() as f64 / domain_name.len() as f64;
@@ -198,6 +202,14 @@ fn is_junk_url(path_lower: &str, title: &str) -> bool {
         }
     }
 
+    false
+}
+
+fn is_preferred_tld(domain_bare: &str) -> bool {
+    static PREFERRED_TLDS: &[&str] = &["com", "org", "net", "edu", "gov", "io", "co", "ai"];
+    if let Some(tld) = domain_bare.rsplit('.').next() {
+        return PREFERRED_TLDS.contains(&tld);
+    }
     false
 }
 
