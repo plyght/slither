@@ -16,8 +16,8 @@ use extractor::{
     extract_meta_description, extract_title,
 };
 use links::extract_links;
-use text::extract_clean_text;
 pub use text::content_quality_score;
+use text::extract_clean_text;
 
 pub struct Transformer;
 
@@ -122,6 +122,7 @@ fn enrich_homepage_body(
     enriched
 }
 
+#[derive(Clone)]
 pub struct Fang {
     config: FangConfig,
 }

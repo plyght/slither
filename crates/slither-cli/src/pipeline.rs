@@ -31,7 +31,7 @@ pub async fn crawl(config: SlitherConfig, seeds: Vec<Seed>) -> SlitherResult<()>
     std::fs::create_dir_all(&favicon_dir)?;
 
     let snake = Crawler::new(config.crawler.clone()).with_known_urls(known_ids);
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<RawPage>(64);
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<RawPage>(2048);
 
     let mut sorted_seeds = seeds;
     sorted_seeds.sort_by_key(|b| std::cmp::Reverse(b.priority()));
@@ -74,27 +74,37 @@ pub async fn crawl(config: SlitherConfig, seeds: Vec<Seed>) -> SlitherResult<()>
                     None => break,
                     Some(raw_page) => {
                         pages_crawled += 1;
+                        let page_url = raw_page.url.clone();
                         let page_domain = raw_page.domain.clone();
-                        match transformer.transform(&raw_page) {
-                            Ok(doc) => {
-                                let quality = fang::content_quality_score(&doc.body);
-                                let is_homepage = is_homepage_url(&raw_page.url);
-                                if quality < 0.15 && !is_homepage {
-                                    debug!("skipping low-quality page ({quality:.2}): {}", raw_page.url);
-                                } else {
-                                    if let std::collections::hash_map::Entry::Vacant(e) = domain_favicons.entry(page_domain) {
-                                        e.insert(doc.favicon_url.clone());
-                                    }
-                                    match ranker.index_document(&doc) {
-                                        Ok(()) => pages_indexed += 1,
-                                        Err(e) => {
-                                            warn!("index error for {}: {e}", raw_page.url);
-                                        }
-                                    }
+                        let transformer_clone = transformer.clone();
+
+                        let doc_result = tokio::task::spawn_blocking(move || {
+                            match transformer_clone.transform(&raw_page) {
+                                Ok(doc) => {
+                                    let quality = fang::content_quality_score(&doc.body);
+                                    Some((doc, quality))
+                                }
+                                Err(e) => {
+                                    tracing::warn!("transform error for {}: {e}", raw_page.url);
+                                    None
                                 }
                             }
-                            Err(e) => {
-                                warn!("transform error for {}: {e}", raw_page.url);
+                        }).await;
+
+                        if let Ok(Some((doc, quality))) = doc_result {
+                            let is_homepage = is_homepage_url(&page_url);
+                            if quality < 0.15 && !is_homepage {
+                                debug!("skipping low-quality page ({quality:.2}): {}", page_url);
+                            } else {
+                                if let std::collections::hash_map::Entry::Vacant(e) = domain_favicons.entry(page_domain) {
+                                    e.insert(doc.favicon_url.clone());
+                                }
+                                match ranker.index_document(&doc) {
+                                    Ok(()) => pages_indexed += 1,
+                                    Err(e) => {
+                                        warn!("index error for {}: {e}", page_url);
+                                    }
+                                }
                             }
                         }
 

@@ -66,10 +66,7 @@ pub fn extract_clean_text(document: &Html) -> String {
         .join("\n\n")
 }
 
-fn collect_text_blocks(
-    el: scraper::ElementRef,
-    out: &mut Vec<String>,
-) {
+fn collect_text_blocks(el: scraper::ElementRef, out: &mut Vec<String>) {
     use scraper::node::Node;
 
     let tag = el.value().name();
@@ -173,7 +170,8 @@ pub fn content_quality_score(body: &str) -> f32 {
 
     // sentence quality — real content has sentences (7+ words between periods).
     // boilerplate pages are mostly short fragments: "Fork 12", "Star 0", "Actions"
-    let sentences: Vec<&str> = body.split(['.', '!', '?'])
+    let sentences: Vec<&str> = body
+        .split(['.', '!', '?'])
         .filter(|s| s.split_whitespace().count() >= 7)
         .collect();
     let sentence_ratio = if word_count > 0 {
@@ -184,7 +182,8 @@ pub fn content_quality_score(body: &str) -> f32 {
     };
 
     // paragraph quality — real articles have paragraphs with 20+ words
-    let paragraphs: Vec<&str> = body.split("\n\n")
+    let paragraphs: Vec<&str> = body
+        .split("\n\n")
         .filter(|p| p.split_whitespace().count() >= 20)
         .collect();
     let long_para_count = paragraphs.len() as f32;

@@ -39,7 +39,10 @@ pub async fn run(ctx: WorkerContext) {
                 if ctx.frontier.is_done() {
                     break;
                 }
-                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                tokio::select! {
+                    _ = ctx.frontier.notify.notified() => {}
+                    _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {}
+                }
             }
         }
     }

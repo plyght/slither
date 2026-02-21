@@ -3,9 +3,11 @@ use governor::{DefaultDirectRateLimiter, Quota, RateLimiter};
 use slither_core::SlitherError;
 use std::num::NonZeroU32;
 use std::sync::Arc;
+use std::time::Duration;
 
 pub struct DomainRateLimiter {
     limiters: DashMap<String, Arc<DefaultDirectRateLimiter>>,
+    delay_limiters: DashMap<String, Arc<DefaultDirectRateLimiter>>,
     quota: Quota,
 }
 
@@ -17,6 +19,7 @@ impl DomainRateLimiter {
         let quota = Quota::per_second(nz_rate);
         Ok(Self {
             limiters: DashMap::new(),
+            delay_limiters: DashMap::new(),
             quota,
         })
     }
@@ -35,9 +38,22 @@ impl DomainRateLimiter {
 
     pub async fn wait_for_domain_with_delay(&self, domain: &str, crawl_delay_secs: Option<u64>) {
         if let Some(delay) = crawl_delay_secs {
-            tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
-        } else {
-            self.wait_for_domain(domain).await;
+            if delay > 0 {
+                let limiter = {
+                    let entry = self
+                        .delay_limiters
+                        .entry(domain.to_string())
+                        .or_insert_with(|| {
+                            let quota = Quota::with_period(Duration::from_secs(delay))
+                                .unwrap_or_else(|| Quota::per_second(NonZeroU32::new(1).unwrap()));
+                            Arc::new(RateLimiter::direct(quota))
+                        });
+                    entry.clone()
+                };
+                limiter.until_ready().await;
+                return;
+            }
         }
+        self.wait_for_domain(domain).await;
     }
 }

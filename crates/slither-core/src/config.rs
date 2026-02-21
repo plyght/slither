@@ -66,12 +66,12 @@ impl Default for SlitherConfig {
 impl Default for CrawlerConfig {
     fn default() -> Self {
         Self {
-            max_concurrent: 50,
+            max_concurrent: 100,
             max_depth: 3,
-            rate_limit_per_second: 10,
+            rate_limit_per_second: 50,
             user_agent: "SlitherBot/0.1 (+https://search.peril.lol/about)".to_string(),
             respect_robots: true,
-            request_timeout_secs: 30,
+            request_timeout_secs: 15,
         }
     }
 }

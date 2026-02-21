@@ -3,6 +3,7 @@ use dashmap::DashMap;
 use slither_core::CrawlScope;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
+use tokio::sync::Notify;
 use xxhash_rust::xxh3::xxh3_64;
 
 #[derive(Debug, Clone)]
@@ -18,6 +19,7 @@ pub struct Frontier {
     pub global: Injector<CrawlTask>,
     seen: DashMap<u64, ()>,
     pending: AtomicI64,
+    pub notify: Arc<Notify>,
 }
 
 impl Frontier {
@@ -26,6 +28,7 @@ impl Frontier {
             global: Injector::new(),
             seen: DashMap::new(),
             pending: AtomicI64::new(0),
+            notify: Arc::new(Notify::new()),
         }
     }
 
@@ -42,6 +45,7 @@ impl Frontier {
             global: Injector::new(),
             seen,
             pending: AtomicI64::new(0),
+            notify: Arc::new(Notify::new()),
         }
     }
 
@@ -66,6 +70,7 @@ impl Frontier {
             scope,
             scope_domain,
         });
+        self.notify.notify_waiters();
     }
 
     pub fn try_push(
@@ -87,6 +92,7 @@ impl Frontier {
                 scope,
                 scope_domain,
             });
+            self.notify.notify_waiters();
             true
         } else {
             false
