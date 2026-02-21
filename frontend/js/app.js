@@ -2,7 +2,7 @@
     'use strict';
 
     var API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-        ? 'http://REDACTED_SERVER_IP:8080'
+        ? 'https://search.peril.lol'
         : '';
     var currentMode = 'hybrid';
     var currentController = null;
@@ -91,15 +91,25 @@
         return text.substring(0, maxLen).replace(/\s+\S*$/, '') + '\u2026';
     }
 
-    function renderSkeletons(count) {
+    function renderSkeletons(groupCount) {
         var html = '';
-        for (var i = 0; i < count; i++) {
-            html += '<div class="skeleton" aria-hidden="true">' +
-                '<div class="skeleton-line skeleton-url"></div>' +
-                '<div class="skeleton-line skeleton-title"></div>' +
-                '<div class="skeleton-line skeleton-text-1"></div>' +
-                '<div class="skeleton-line skeleton-text-2"></div>' +
-                '</div>';
+        var resultsPerGroup = [2, 1, 1];
+        for (var g = 0; g < groupCount; g++) {
+            var count = resultsPerGroup[g] || 1;
+            html += '<div class="skeleton-group" style="--i:' + g + '" aria-hidden="true">';
+            html += '<div class="skeleton-group-header">';
+            html += '<div class="skeleton-line skeleton-favicon"></div>';
+            html += '<div class="skeleton-line skeleton-domain"></div>';
+            html += '</div>';
+            for (var i = 0; i < count; i++) {
+                html += '<div class="skeleton">' +
+                    '<div class="skeleton-line skeleton-url"></div>' +
+                    '<div class="skeleton-line skeleton-title"></div>' +
+                    '<div class="skeleton-line skeleton-text-1"></div>' +
+                    '<div class="skeleton-line skeleton-text-2"></div>' +
+                    '</div>';
+            }
+            html += '</div>';
         }
         return html;
     }
@@ -143,7 +153,7 @@
 
         setState('results');
         searchInput.classList.add('loading');
-        resultsList.innerHTML = renderSkeletons(4);
+        resultsList.innerHTML = renderSkeletons(3);
         resultsMeta.textContent = '';
 
         var startTime = performance.now();
@@ -164,20 +174,37 @@
 
                 if (!data.success) {
                     resultsMeta.textContent = '';
-                    resultsList.innerHTML = '<div class="error-msg"><p>' + escapeHtml(data.error || 'Search failed.') + '</p><button class="retry-btn" onclick="window.__retry()">Try again</button></div>';
+                    resultsList.innerHTML = '<div class="error-msg">' +
+                        '<span class="error-msg-icon">&times;</span>' +
+                        '<p>' + escapeHtml(data.error || 'Something went wrong with the search.') + '</p>' +
+                        '<button class="retry-btn" onclick="window.__retry()">Try again</button>' +
+                        '</div>';
                     return;
                 }
 
                 var results = data.data || [];
 
                 if (results.length === 0) {
-                    resultsMeta.innerHTML = 'No results &middot; <span class="meta-mode">' + mode + '</span> &middot; ' + elapsed + 's';
-                    resultsList.innerHTML = '<div class="no-results"><span class="no-results-ornament">&oslash;</span>No results found for \u201c' + escapeHtml(query) + '\u201d</div>';
+                    resultsMeta.innerHTML = '<span class="meta-query">\u201c' + escapeHtml(query) + '\u201d</span>' +
+                        '<span class="meta-sep">&middot;</span> no results' +
+                        '<span class="meta-sep">&middot;</span> <span class="meta-mode">' + mode + '</span>' +
+                        '<span class="meta-sep">&middot;</span> ' + elapsed + 's';
+                    resultsList.innerHTML = '<div class="no-results">' +
+                        '<span class="no-results-ornament">&oslash;</span>' +
+                        '<div class="no-results-title">No results found</div>' +
+                        '<div class="no-results-text">Nothing matched \u201c' + escapeHtml(query) + '\u201d in the current index.</div>' +
+                        '<div class="no-results-suggestions">' +
+                        '<span>Try different keywords or a broader query</span>' +
+                        '<span>Try switching to <em>' + (mode === 'semantic' ? 'hybrid' : 'semantic') + '</em> mode</span>' +
+                        '</div>' +
+                        '</div>';
                     return;
                 }
 
-                resultsMeta.innerHTML = results.length + ' result' + (results.length !== 1 ? 's' : '') +
-                    ' &middot; <span class="meta-mode">' + mode + '</span> &middot; ' + elapsed + 's';
+                resultsMeta.innerHTML = '<span class="meta-query">\u201c' + escapeHtml(query) + '\u201d</span>' +
+                    '<span class="meta-sep">&middot;</span> ' + results.length + ' result' + (results.length !== 1 ? 's' : '') +
+                    '<span class="meta-sep">&middot;</span> <span class="meta-mode">' + mode + '</span>' +
+                    '<span class="meta-sep">&middot;</span> ' + elapsed + 's';
 
                 var grouped = [];
                 var domainMap = {};
@@ -202,10 +229,13 @@
                         '</div>' +
                         '<div class="domain-results">';
                     group.results.forEach(function (r) {
+                        var scorePercent = typeof r.score === 'number' ? Math.min(100, Math.round(r.score * 100)) : null;
+                        var externalIcon = '<svg class="external-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3H3v10h10v-3"/><path d="M9 2h5v5"/><path d="M14 2L7 9"/></svg>';
                         html += '<article class="result" style="--i:' + globalIdx + '">' +
                             '<cite class="result-url">' + escapeHtml(formatUrl(r.url)) + '</cite>' +
-                            '<h3><a href="' + escapeHtml(r.url) + '" class="result-title">' + escapeHtml(r.title || 'Untitled') + '</a></h3>' +
+                            '<h3><a href="' + escapeHtml(r.url) + '" class="result-title" target="_blank" rel="noopener">' + escapeHtml(r.title || 'Untitled') + externalIcon + '</a></h3>' +
                             '<p class="result-snippet">' + highlightTerms(truncateSnippet(r.snippet, 280), query) + '</p>' +
+                            (scorePercent !== null ? '<div class="result-score"><div class="result-score-bar"><div class="result-score-fill" style="width:' + scorePercent + '%"></div></div>' + (scorePercent / 100).toFixed(2) + '</div>' : '') +
                             '</article>';
                         globalIdx++;
                     });
@@ -217,7 +247,11 @@
                 searchInput.classList.remove('loading');
                 if (err.name === 'AbortError') return;
                 resultsMeta.textContent = '';
-                resultsList.innerHTML = '<div class="error-msg"><p>Could not reach the search index.</p><button class="retry-btn" onclick="window.__retry()">Try again</button></div>';
+                resultsList.innerHTML = '<div class="error-msg">' +
+                    '<span class="error-msg-icon">&times;</span>' +
+                    '<p>Could not reach the search index. The server may be temporarily unavailable.</p>' +
+                    '<button class="retry-btn" onclick="window.__retry()">Try again</button>' +
+                    '</div>';
             });
     }
 

@@ -32,4 +32,12 @@ impl DomainRateLimiter {
         };
         limiter.until_ready().await;
     }
+
+    pub async fn wait_for_domain_with_delay(&self, domain: &str, crawl_delay_secs: Option<u64>) {
+        if let Some(delay) = crawl_delay_secs {
+            tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
+        } else {
+            self.wait_for_domain(domain).await;
+        }
+    }
 }

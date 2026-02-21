@@ -15,7 +15,7 @@ use bm25::Bm25Params;
 use index::{flush_index, hash_term, InMemoryIndex};
 use snippet::extract_snippet;
 use storage::{DocStoreReader, DocStoreWriter, IndexReader, Posting, StoredDoc};
-use tokenizer::{tokenize, tokenize_query};
+use tokenizer::{tokenize, tokenize_query_with_originals};
 
 const INDEX_FILE: &str = "index.bin";
 const DOCS_FILE: &str = "docs.bin";
@@ -163,16 +163,8 @@ impl Index {
         }
 
         let title_tokens = tokenize(&doc.title);
-        let title_boosted: Vec<String> = title_tokens
-            .iter()
-            .cloned()
-            .cycle()
-            .take(title_tokens.len() * 3)
-            .collect();
-
         let body_tokens = tokenize(&doc.body);
-
-        let mut all_tokens = title_boosted;
+        let mut all_tokens = title_tokens;
         all_tokens.extend(body_tokens);
 
         let seq = self.seq_to_doc_id.len() as u64;
@@ -195,7 +187,7 @@ impl Index {
     }
 
     pub fn search(&self, query: &str, limit: usize) -> SlitherResult<Vec<SearchResult>> {
-        let query_tokens = tokenize_query(query);
+        let (query_tokens, original_tokens) = tokenize_query_with_originals(query);
         if query_tokens.is_empty() {
             return Ok(Vec::new());
         }
@@ -208,15 +200,22 @@ impl Index {
         let avg_doc_len = self.mem.avg_doc_length();
 
         if self.flushed {
-            self.search_from_disk(&query_tokens, limit, avg_doc_len)
+            self.search_from_disk(&query_tokens, &original_tokens, limit, avg_doc_len)
         } else {
-            self.search_in_memory(&query_tokens, limit, doc_count, avg_doc_len)
+            self.search_in_memory(
+                &query_tokens,
+                &original_tokens,
+                limit,
+                doc_count,
+                avg_doc_len,
+            )
         }
     }
 
     fn search_in_memory(
         &self,
         query_tokens: &[String],
+        original_tokens: &[String],
         limit: usize,
         doc_count: usize,
         avg_doc_len: f64,
@@ -251,6 +250,22 @@ impl Index {
 
         let mut ranked: Vec<(u64, f64)> = scores.into_iter().collect();
         ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        ranked.truncate(limit * 4);
+
+        for (seq, score) in ranked.iter_mut() {
+            if let Ok(stored) = self.read_stored_doc(*seq) {
+                let title_lower = stored.title.to_lowercase();
+                let mut title_bonus = 0.0f64;
+                for token in original_tokens {
+                    if title_lower.contains(token.as_str()) {
+                        title_bonus += 0.15 * score.max(0.01);
+                    }
+                }
+                *score += title_bonus;
+            }
+        }
+
+        ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         ranked.truncate(limit);
 
         let mut results = Vec::with_capacity(ranked.len());
@@ -261,7 +276,7 @@ impl Index {
             };
 
             let stored = self.read_stored_doc(seq)?;
-            let snippet = extract_snippet(&stored.body, query_tokens);
+            let snippet = extract_snippet(&stored.body, query_tokens, original_tokens);
 
             results.push(SearchResult {
                 doc_id,
@@ -278,6 +293,7 @@ impl Index {
     fn search_from_disk(
         &self,
         query_tokens: &[String],
+        original_tokens: &[String],
         limit: usize,
         avg_doc_len: f64,
     ) -> SlitherResult<Vec<SearchResult>> {
@@ -318,6 +334,22 @@ impl Index {
 
         let mut ranked: Vec<(u64, f64)> = scores.into_iter().collect();
         ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        ranked.truncate(limit * 4);
+
+        for (seq, score) in ranked.iter_mut() {
+            if let Ok(stored) = doc_store.read(*seq) {
+                let title_lower = stored.title.to_lowercase();
+                let mut title_bonus = 0.0f64;
+                for token in original_tokens {
+                    if title_lower.contains(token.as_str()) {
+                        title_bonus += 0.15 * score.max(0.01);
+                    }
+                }
+                *score += title_bonus;
+            }
+        }
+
+        ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         ranked.truncate(limit);
 
         let mut results = Vec::with_capacity(ranked.len());
@@ -328,7 +360,7 @@ impl Index {
             };
 
             let stored = doc_store.read(seq)?;
-            let snippet = extract_snippet(&stored.body, query_tokens);
+            let snippet = extract_snippet(&stored.body, query_tokens, original_tokens);
 
             results.push(SearchResult {
                 doc_id,

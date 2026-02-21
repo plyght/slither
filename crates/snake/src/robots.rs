@@ -11,7 +11,6 @@ struct RobotsRule {
 #[derive(Debug, Clone)]
 pub struct RobotsInfo {
     rules: Vec<RobotsRule>,
-    #[allow(dead_code)]
     pub crawl_delay_secs: Option<u64>,
     allowed_all: bool,
 }
@@ -114,6 +113,19 @@ impl RobotsCache {
             client,
             user_agent,
         }
+    }
+
+    pub async fn get_crawl_delay(&self, url: &str) -> Option<u64> {
+        let parsed = match url::Url::parse(url) {
+            Ok(u) => u,
+            Err(_) => return None,
+        };
+        let domain = match parsed.host_str() {
+            Some(h) => h.to_string(),
+            None => return None,
+        };
+        let robots_info = self.get_or_fetch(&domain, &parsed).await;
+        robots_info.crawl_delay_secs
     }
 
     pub async fn is_allowed(&self, url: &str) -> bool {

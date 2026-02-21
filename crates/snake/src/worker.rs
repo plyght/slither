@@ -1,5 +1,4 @@
 use crossbeam_deque::Injector;
-use regex::Regex;
 use slither_core::{CrawlScope, CrawlerConfig};
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
@@ -162,6 +161,12 @@ async fn process_task(ctx: &WorkerContext, task: CrawlTask) {
         return;
     }
 
+    let crawl_delay = if ctx.config.respect_robots {
+        ctx.robots.get_crawl_delay(url).await
+    } else {
+        None
+    };
+
     let parsed_url = match Url::parse(url) {
         Ok(u) => u,
         Err(e) => {
@@ -172,7 +177,7 @@ async fn process_task(ctx: &WorkerContext, task: CrawlTask) {
     };
 
     let domain = parsed_url.host_str().unwrap_or("").to_string();
-    ctx.rate_limiter.wait_for_domain(&domain).await;
+    ctx.rate_limiter.wait_for_domain_with_delay(&domain, crawl_delay).await;
 
     debug!("worker {} fetching depth={} {}", ctx.id, task.depth, url);
 
@@ -257,14 +262,22 @@ fn extract_root_domain(host: &str) -> &str {
 }
 
 fn extract_links(html: &str, base: &Url) -> Vec<String> {
-    let re = Regex::new(r#"(?i)href\s*=\s*["']([^"']+)["']"#).unwrap();
-    let mut links = Vec::new();
+    let document = scraper::Html::parse_document(html);
+    let selector = match scraper::Selector::parse("a[href]") {
+        Ok(s) => s,
+        Err(_) => return Vec::new(),
+    };
 
-    for cap in re.captures_iter(html) {
-        let href = match cap.get(1) {
-            Some(m) => m.as_str(),
+    let mut links = Vec::new();
+    for el in document.select(&selector) {
+        let href = match el.value().attr("href") {
+            Some(h) => h.trim(),
             None => continue,
         };
+
+        if href.is_empty() || href.starts_with('#') {
+            continue;
+        }
 
         let resolved = match base.join(href) {
             Ok(u) => u,
@@ -277,7 +290,6 @@ fn extract_links(html: &str, base: &Url) -> Vec<String> {
 
         let mut normalized = resolved;
         normalized.set_fragment(None);
-
         links.push(normalized.to_string());
     }
 

@@ -1,7 +1,7 @@
 const SNIPPET_LEN: usize = 220;
 const WINDOW_STEP: usize = 40;
 
-pub fn extract_snippet(body: &str, query_tokens: &[String]) -> String {
+pub fn extract_snippet(body: &str, query_tokens: &[String], original_tokens: &[String]) -> String {
     if body.is_empty() {
         return String::new();
     }
@@ -16,13 +16,17 @@ pub fn extract_snippet(body: &str, query_tokens: &[String]) -> String {
     let mut best_start = 0usize;
     let mut best_score: usize = 0;
 
+    let all_scoring_tokens: Vec<&String> =
+        query_tokens.iter().chain(original_tokens.iter()).collect();
+    let total_unique = all_scoring_tokens.len();
+
     let mut offset = 0usize;
     while offset < body.len() {
         let end = find_char_boundary(body, offset + SNIPPET_LEN);
         let window = &lower_body[offset..end];
 
         let mut score = 0usize;
-        for token in query_tokens {
+        for token in &all_scoring_tokens {
             if window.contains(token.as_str()) {
                 score += 1;
                 if window.matches(token.as_str()).count() > 1 {
@@ -36,7 +40,7 @@ pub fn extract_snippet(body: &str, query_tokens: &[String]) -> String {
             best_start = offset;
         }
 
-        if score == query_tokens.len() {
+        if score == total_unique {
             break;
         }
 
@@ -60,7 +64,7 @@ pub fn extract_snippet(body: &str, query_tokens: &[String]) -> String {
         snippet = format!("{}…", snippet.trim_end());
     }
 
-    highlight_terms(&snippet, query_tokens)
+    highlight_terms(&snippet, original_tokens)
 }
 
 fn highlight_terms(text: &str, query_tokens: &[String]) -> String {

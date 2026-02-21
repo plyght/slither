@@ -179,6 +179,22 @@ pub fn extract_favicon_url(document: &Html, page_url: &str) -> Option<String> {
     Some(origin.to_string())
 }
 
+pub fn extract_canonical_url(document: &Html, page_url: &str) -> Option<String> {
+    let base = url::Url::parse(page_url).ok()?;
+    let sel = Selector::parse("link[rel='canonical']").ok()?;
+    if let Some(el) = document.select(&sel).next() {
+        if let Some(href) = el.value().attr("href") {
+            let href = href.trim();
+            if !href.is_empty() {
+                if let Ok(resolved) = base.join(href) {
+                    return Some(resolved.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
 pub fn compute_content_hash(body: &str) -> u64 {
     xxh3_64(body.as_bytes())
 }

@@ -88,9 +88,9 @@ impl Ranker {
                 let vector_hits = if candidate_ids.is_empty() {
                     self.embedder.search(&embedding, query.limit)?
                 } else if query_terms.len() <= 2 {
-                    let mut hits = self
-                        .embedder
-                        .search_filtered(&embedding, pool, &candidate_ids)?;
+                    let mut hits =
+                        self.embedder
+                            .search_filtered(&embedding, pool, &candidate_ids)?;
                     let unconstrained = self.embedder.search(&embedding, pool / 4)?;
                     for hit in unconstrained {
                         if !candidate_ids.contains(&hit.0) {
@@ -131,6 +131,10 @@ impl Ranker {
             },
         );
         Ok(())
+    }
+
+    pub fn doc_count(&self) -> usize {
+        self.index.doc_count()
     }
 
     pub fn flush(&mut self) -> SlitherResult<()> {

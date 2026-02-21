@@ -195,6 +195,25 @@ pub fn is_junk_candidate(url: &str, title: &str) -> bool {
 }
 
 fn is_junk_url(path_lower: &str, title: &str) -> bool {
+    static AUTH_PATHS: &[&str] = &[
+        "/login",
+        "/signin",
+        "/signup",
+        "/join",
+        "/register",
+        "/sessions",
+        "/password",
+        "/auth/",
+        "/oauth/",
+        "/account/",
+        "/sso/",
+    ];
+    for pat in AUTH_PATHS {
+        if path_lower.starts_with(pat) || path_lower.contains(pat) {
+            return true;
+        }
+    }
+
     static WIKI_JUNK: &[&str] = &[
         "/wiki/file:",
         "/wiki/talk:",
@@ -290,7 +309,10 @@ fn looks_like_brand(domain_name: &str, domain_bare: &str) -> bool {
     if !is_preferred_tld(domain_bare) {
         return false;
     }
-    let alpha_count = domain_name.chars().filter(|c| c.is_ascii_alphabetic()).count();
+    let alpha_count = domain_name
+        .chars()
+        .filter(|c| c.is_ascii_alphabetic())
+        .count();
     alpha_count >= domain_name.len().saturating_sub(1)
 }
 

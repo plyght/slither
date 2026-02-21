@@ -264,7 +264,7 @@ async fn stats_handler(
     State(rankers): State<SharedRanker>,
 ) -> Json<ApiResponse<serde_json::Value>> {
     let ranker = rankers.lock().await;
-    let doc_count = ranker.index.doc_count();
+    let doc_count = ranker.doc_count();
 
     Json(ApiResponse::ok(serde_json::json!({
         "documents": doc_count,
@@ -378,7 +378,7 @@ async fn admin_status_handler(State(state): State<AdminState>) -> Json<ApiRespon
     let crawling = state.is_crawling.load(Ordering::SeqCst);
     let last_crawl = state.last_crawl.lock().await.clone();
     let seed_count = seeds::load_seeds(&state.config.data_dir).len();
-    let doc_count = state.ranker.lock().await.index.doc_count();
+    let doc_count = state.ranker.lock().await.doc_count();
 
     Json(ApiResponse::ok(AdminStatus {
         crawling,
@@ -404,7 +404,7 @@ async fn admin_reload_handler(State(state): State<AdminState>) -> Json<ApiRespon
     *guard = new_ranker;
     drop(guard);
 
-    let doc_count = state.ranker.lock().await.index.doc_count();
+    let doc_count = state.ranker.lock().await.doc_count();
     Json(ApiResponse::ok(format!("index reloaded, {} documents", doc_count)))
 }
 

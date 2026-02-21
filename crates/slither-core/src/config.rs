@@ -69,7 +69,7 @@ impl Default for CrawlerConfig {
             max_concurrent: 50,
             max_depth: 3,
             rate_limit_per_second: 10,
-            user_agent: "SlitherBot/0.1".to_string(),
+            user_agent: "SlitherBot/0.1 (+https://search.peril.lol/about)".to_string(),
             respect_robots: true,
             request_timeout_secs: 30,
         }

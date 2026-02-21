@@ -93,6 +93,51 @@ fn flush_query_token(current: &mut String, tokens: &mut Vec<String>) {
     }
 }
 
+pub fn tokenize_query_with_originals(text: &str) -> (Vec<String>, Vec<String>) {
+    let lower = text.to_lowercase();
+    let mut stemmed = Vec::new();
+    let mut originals = Vec::new();
+
+    let mut current = String::new();
+    for ch in lower.chars() {
+        if ch.is_alphanumeric() || ch == '\'' {
+            current.push(ch);
+        } else if !current.is_empty() {
+            let token = current.trim_matches('\'').to_string();
+            current.clear();
+            if token.len() >= MIN_TOKEN_LEN
+                && token.len() <= MAX_TOKEN_LEN
+                && !STOP_WORDS.contains(&token.as_str())
+            {
+                originals.push(token.clone());
+                let porter = STEMMER.stem(&token).into_owned();
+                let legacy = legacy_stem(&token);
+                stemmed.push(porter.clone());
+                if legacy != porter {
+                    stemmed.push(legacy);
+                }
+            }
+        }
+    }
+    if !current.is_empty() {
+        let token = current.trim_matches('\'').to_string();
+        if token.len() >= MIN_TOKEN_LEN
+            && token.len() <= MAX_TOKEN_LEN
+            && !STOP_WORDS.contains(&token.as_str())
+        {
+            originals.push(token.clone());
+            let porter = STEMMER.stem(&token).into_owned();
+            let legacy = legacy_stem(&token);
+            stemmed.push(porter.clone());
+            if legacy != porter {
+                stemmed.push(legacy);
+            }
+        }
+    }
+
+    (stemmed, originals)
+}
+
 fn legacy_stem(word: &str) -> String {
     let len = word.len();
 

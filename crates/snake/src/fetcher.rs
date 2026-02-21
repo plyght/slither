@@ -43,6 +43,23 @@ impl Fetcher {
 
         let status = response.status().as_u16();
 
+        if !response.status().is_success() {
+            tracing::debug!("non-success status {} for {}", status, url);
+            return None;
+        }
+
+        let content_type = response.headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        if !content_type.is_empty()
+            && !content_type.contains("text/html")
+            && !content_type.contains("application/xhtml")
+        {
+            tracing::debug!("skipping non-HTML content-type '{}' for {}", content_type, url);
+            return None;
+        }
+
         let mut headers = HashMap::new();
         for (name, value) in response.headers() {
             if let Ok(v) = value.to_str() {
