@@ -26,14 +26,8 @@ const BLOCK_TAGS: &[&str] = &[
 ];
 
 pub fn extract_clean_text(document: &Html) -> String {
-    let strip_selector = Selector::parse(&STRIP_TAGS.join(","))
-        .unwrap_or_else(|_| Selector::parse("script").unwrap());
-
     let body_selector =
         Selector::parse("body").unwrap_or_else(|_| Selector::parse("html").unwrap());
-
-    let block_selector =
-        Selector::parse(&BLOCK_TAGS.join(",")).unwrap_or_else(|_| Selector::parse("p").unwrap());
 
     let content_selector =
         Selector::parse("main, article, [role='main'], #content, #main, .content, .main, section")
@@ -58,13 +52,11 @@ pub fn extract_clean_text(document: &Html) -> String {
     let mut paragraphs: Vec<String> = Vec::new();
 
     if let Some(main_el) = root {
-        collect_text_blocks(main_el, &strip_selector, &block_selector, &mut paragraphs);
+        collect_text_blocks(main_el, &mut paragraphs);
+    } else if let Some(body) = document.select(&body_selector).next() {
+        collect_text_blocks(body, &mut paragraphs);
     } else {
-        if let Some(body) = document.select(&body_selector).next() {
-            collect_text_blocks(body, &strip_selector, &block_selector, &mut paragraphs);
-        } else {
-            collect_text_from_root(document, &strip_selector, &mut paragraphs);
-        }
+        collect_text_from_root(document, &mut paragraphs);
     }
 
     paragraphs
@@ -76,8 +68,6 @@ pub fn extract_clean_text(document: &Html) -> String {
 
 fn collect_text_blocks(
     el: scraper::ElementRef,
-    strip_selector: &Selector,
-    block_selector: &Selector,
     out: &mut Vec<String>,
 ) {
     use scraper::node::Node;
@@ -88,7 +78,7 @@ fn collect_text_blocks(
     }
 
     if BLOCK_TAGS.contains(&tag) {
-        let text = collect_inline_text(el, strip_selector);
+        let text = collect_inline_text(el);
         let trimmed = collapse_whitespace(&text);
         if !trimmed.is_empty() {
             out.push(trimmed);
@@ -104,7 +94,7 @@ fn collect_text_blocks(
                     if STRIP_TAGS.contains(&child_tag) {
                         continue;
                     }
-                    collect_text_blocks(child_el, strip_selector, block_selector, out);
+                    collect_text_blocks(child_el, out);
                 }
             }
             Node::Text(t) => {
@@ -118,7 +108,7 @@ fn collect_text_blocks(
     }
 }
 
-fn collect_inline_text(el: scraper::ElementRef, strip_selector: &Selector) -> String {
+fn collect_inline_text(el: scraper::ElementRef) -> String {
     use scraper::node::Node;
 
     let tag = el.value().name();
@@ -134,7 +124,7 @@ fn collect_inline_text(el: scraper::ElementRef, strip_selector: &Selector) -> St
                 if let Some(child_el) = scraper::ElementRef::wrap(child) {
                     let child_tag = child_el.value().name();
                     if !STRIP_TAGS.contains(&child_tag) {
-                        buf.push_str(&collect_inline_text(child_el, strip_selector));
+                        buf.push_str(&collect_inline_text(child_el));
                     }
                 }
             }
@@ -144,7 +134,7 @@ fn collect_inline_text(el: scraper::ElementRef, strip_selector: &Selector) -> St
     buf
 }
 
-fn collect_text_from_root(document: &Html, _strip_selector: &Selector, out: &mut Vec<String>) {
+fn collect_text_from_root(document: &Html, out: &mut Vec<String>) {
     use scraper::node::Node;
 
     for node in document.tree.nodes() {

@@ -161,7 +161,7 @@ pub fn extract_favicon_url(document: &Html, page_url: &str) -> Option<String> {
     ];
 
     for selector_str in &selectors {
-        if let Some(sel) = Selector::parse(selector_str).ok() {
+        if let Ok(sel) = Selector::parse(selector_str) {
             if let Some(el) = document.select(&sel).next() {
                 if let Some(href) = el.value().attr("href") {
                     if let Ok(resolved) = base.join(href) {

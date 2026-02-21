@@ -21,32 +21,22 @@ pub struct SeedConfig {
     pub sitemap: bool,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "lowercase")]
 pub enum SeedPriority {
     Low,
+    #[default]
     Normal,
     High,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum CrawlScope {
+    #[default]
     Any,
     SameDomain,
     SameOrigin,
-}
-
-impl Default for SeedPriority {
-    fn default() -> Self {
-        Self::Normal
-    }
-}
-
-impl Default for CrawlScope {
-    fn default() -> Self {
-        Self::Any
-    }
 }
 
 pub fn default_seed_depth() -> usize {
@@ -132,15 +122,10 @@ pub struct SearchQuery {
     pub limit: usize,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SearchMode {
     Text,
     Semantic,
+    #[default]
     Hybrid,
-}
-
-impl Default for SearchMode {
-    fn default() -> Self {
-        Self::Hybrid
-    }
 }

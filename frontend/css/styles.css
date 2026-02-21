@@ -611,6 +611,50 @@ body[data-state="results"] .results-section {
     gap: 28px;
 }
 
+.domain-group {
+    opacity: 0;
+    transform: translateY(12px);
+    animation: resultIn 0.5s var(--ease-spring) forwards;
+    animation-delay: calc(0.08s + var(--i, 0) * 50ms);
+}
+
+.domain-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-bottom: 8px;
+    margin-bottom: 4px;
+    border-bottom: 0.5px solid var(--border-color);
+}
+
+.domain-favicon {
+    width: 16px;
+    height: 16px;
+    border-radius: 2px;
+    flex-shrink: 0;
+}
+
+.domain-name {
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    letter-spacing: 0.01em;
+}
+
+.domain-count {
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    margin-left: auto;
+}
+
+.domain-results {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding-left: 24px;
+    padding-top: 10px;
+}
+
 .result {
     padding: 0;
     opacity: 0;
@@ -625,20 +669,6 @@ body[data-state="results"] .results-section {
         opacity: 1;
         transform: translateY(0);
     }
-}
-
-.result-header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 4px;
-}
-
-.result-favicon {
-    width: 16px;
-    height: 16px;
-    border-radius: 2px;
-    flex-shrink: 0;
 }
 
 .result-url {

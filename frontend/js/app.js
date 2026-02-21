@@ -112,6 +112,8 @@
         }
     }
 
+    var statsInterval = null;
+
     function fetchStats() {
         fetch(API_BASE + '/stats')
             .then(function (r) { return r.json(); })
@@ -124,6 +126,11 @@
             .catch(function () {
                 brandTagline.innerHTML = 'hybrid search engine';
             });
+    }
+
+    function startStatsPolling() {
+        if (statsInterval) return;
+        statsInterval = setInterval(fetchStats, 30000);
     }
 
     function doSearch(query, mode, pushState) {
@@ -172,18 +179,37 @@
                 resultsMeta.innerHTML = results.length + ' result' + (results.length !== 1 ? 's' : '') +
                     ' &middot; <span class="meta-mode">' + mode + '</span> &middot; ' + elapsed + 's';
 
-                var html = '';
-                results.forEach(function (r, i) {
+                var grouped = [];
+                var domainMap = {};
+                results.forEach(function (r) {
                     var hostname = extractHostname(r.url);
-                    var faviconSrc = '/favicon?domain=' + encodeURIComponent(hostname);
-                    html += '<article class="result" style="--i:' + i + '">' +
-                        '<div class="result-header">' +
-                        '<img class="result-favicon" src="' + faviconSrc + '" alt="" width="16" height="16" loading="lazy" onerror="this.style.display=\'none\'">' +
-                        '<cite class="result-url">' + escapeHtml(formatUrl(r.url)) + '</cite>' +
+                    if (!domainMap[hostname]) {
+                        domainMap[hostname] = { domain: hostname, results: [] };
+                        grouped.push(domainMap[hostname]);
+                    }
+                    domainMap[hostname].results.push(r);
+                });
+
+                var html = '';
+                var globalIdx = 0;
+                grouped.forEach(function (group) {
+                    var faviconSrc = '/favicon?domain=' + encodeURIComponent(group.domain);
+                    html += '<div class="domain-group" style="--i:' + globalIdx + '">' +
+                        '<div class="domain-header">' +
+                        '<img class="domain-favicon" src="' + faviconSrc + '" alt="" width="16" height="16" loading="lazy" onerror="this.style.display=\'none\'">' +
+                        '<span class="domain-name">' + escapeHtml(group.domain) + '</span>' +
+                        '<span class="domain-count">' + group.results.length + '</span>' +
                         '</div>' +
-                        '<h3><a href="' + escapeHtml(r.url) + '" class="result-title">' + escapeHtml(r.title || 'Untitled') + '</a></h3>' +
-                        '<p class="result-snippet">' + highlightTerms(truncateSnippet(r.snippet, 280), query) + '</p>' +
-                        '</article>';
+                        '<div class="domain-results">';
+                    group.results.forEach(function (r) {
+                        html += '<article class="result" style="--i:' + globalIdx + '">' +
+                            '<cite class="result-url">' + escapeHtml(formatUrl(r.url)) + '</cite>' +
+                            '<h3><a href="' + escapeHtml(r.url) + '" class="result-title">' + escapeHtml(r.title || 'Untitled') + '</a></h3>' +
+                            '<p class="result-snippet">' + highlightTerms(truncateSnippet(r.snippet, 280), query) + '</p>' +
+                            '</article>';
+                        globalIdx++;
+                    });
+                    html += '</div></div>';
                 });
                 resultsList.innerHTML = html;
             })
@@ -553,6 +579,7 @@
 
     function init() {
         fetchStats();
+        startStatsPolling();
 
         var params = new URLSearchParams(window.location.search);
         var q = params.get('q');

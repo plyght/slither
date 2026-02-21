@@ -206,11 +206,15 @@ impl VectorStorage {
     }
 
     pub fn search(&self, query: &[f32], limit: usize) -> Result<Vec<(u64, f32)>, SlitherError> {
-        if self.vector_count == 0 || limit == 0 {
+        if limit == 0 {
             return Ok(Vec::new());
         }
-        let count = self.vector_count as usize;
-        self.scan_vectors(query, limit, count, None)
+        // Read fresh count from file header to support live-updating
+        let count = Self::read_header(&self.vectors_path, self.dimensions)?;
+        if count == 0 {
+            return Ok(Vec::new());
+        }
+        self.scan_vectors(query, limit, count as usize, None)
     }
 
     pub fn search_filtered(
@@ -219,11 +223,15 @@ impl VectorStorage {
         limit: usize,
         allowed_ids: &HashSet<u64>,
     ) -> Result<Vec<(u64, f32)>, SlitherError> {
-        if self.vector_count == 0 || limit == 0 || allowed_ids.is_empty() {
+        if limit == 0 || allowed_ids.is_empty() {
             return Ok(Vec::new());
         }
-        let count = self.vector_count as usize;
-        self.scan_vectors(query, limit, count, Some(allowed_ids))
+        // Read fresh count from file header to support live-updating
+        let count = Self::read_header(&self.vectors_path, self.dimensions)?;
+        if count == 0 {
+            return Ok(Vec::new());
+        }
+        self.scan_vectors(query, limit, count as usize, Some(allowed_ids))
     }
 
     fn scan_vectors(

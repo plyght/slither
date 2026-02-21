@@ -309,14 +309,13 @@ fn load_config(path: Option<&str>) -> SlitherConfig {
     ];
 
     for candidate in candidates.into_iter().flatten() {
-        match std::fs::read_to_string(&candidate) {
-            Ok(contents) => match serde_json::from_str::<SlitherConfig>(&contents) {
+        if let Ok(contents) = std::fs::read_to_string(&candidate) {
+            match serde_json::from_str::<SlitherConfig>(&contents) {
                 Ok(cfg) => return cfg,
                 Err(e) => {
                     eprintln!("Warning: failed to parse config at {candidate}: {e}");
                 }
-            },
-            Err(_) => {}
+            }
         }
     }
 

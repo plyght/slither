@@ -343,11 +343,24 @@ async fn admin_crawl_handler(
     let is_crawling = state.is_crawling.clone();
     let last_crawl = state.last_crawl.clone();
     let config = state.config.clone();
+    let ranker = state.ranker.clone();
 
     is_crawling.store(true, Ordering::SeqCst);
 
     tokio::spawn(async move {
-        let _ = crate::pipeline::crawl(config, seed_list).await;
+        let _ = crate::pipeline::crawl(config.clone(), seed_list).await;
+
+        // Auto-reload index so new data is served immediately
+        if let Ok(new_index) = Index::open(std::path::Path::new(&config.index.data_dir)) {
+            if let Ok(new_embedder) = Iris::new(config.embedder.clone()) {
+                let new_ranker = Ranker::new(new_index, new_embedder);
+                let mut guard = ranker.lock().await;
+                *guard = new_ranker;
+                drop(guard);
+                tracing::info!("index auto-reloaded after crawl");
+            }
+        }
+
         let ts = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs().to_string())

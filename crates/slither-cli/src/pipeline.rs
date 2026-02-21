@@ -34,7 +34,7 @@ pub async fn crawl(config: SlitherConfig, seeds: Vec<Seed>) -> SlitherResult<()>
     let (tx, mut rx) = tokio::sync::mpsc::channel::<RawPage>(64);
 
     let mut sorted_seeds = seeds;
-    sorted_seeds.sort_by(|a, b| b.priority().cmp(&a.priority()));
+    sorted_seeds.sort_by_key(|b| std::cmp::Reverse(b.priority()));
 
     let mut resolved: Vec<(String, usize, CrawlScope)> = Vec::new();
     for seed in &sorted_seeds {
@@ -77,8 +77,8 @@ pub async fn crawl(config: SlitherConfig, seeds: Vec<Seed>) -> SlitherResult<()>
                         let page_domain = raw_page.domain.clone();
                         match transformer.transform(&raw_page) {
                             Ok(doc) => {
-                                if !domain_favicons.contains_key(&page_domain) {
-                                    domain_favicons.insert(page_domain, doc.favicon_url.clone());
+                                if let std::collections::hash_map::Entry::Vacant(e) = domain_favicons.entry(page_domain) {
+                                    e.insert(doc.favicon_url.clone());
                                 }
                                 match ranker.index_document(&doc) {
                                     Ok(()) => pages_indexed += 1,
@@ -92,7 +92,7 @@ pub async fn crawl(config: SlitherConfig, seeds: Vec<Seed>) -> SlitherResult<()>
                             }
                         }
 
-                        if pages_crawled % 100 == 0 {
+                        if pages_crawled.is_multiple_of(100) {
                             let (can_continue, status) = check_storage_limits(
                                 &config.index.data_dir,
                                 &config.embedder.data_dir,

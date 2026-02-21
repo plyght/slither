@@ -9,7 +9,7 @@ use tracing::{info, warn};
 enum ModelInner {
     Onnx {
         session: Mutex<Session>,
-        tokenizer: Tokenizer,
+        tokenizer: Box<Tokenizer>,
     },
     Fallback,
 }
@@ -62,7 +62,7 @@ impl EmbeddingModel {
         Ok(Self {
             inner: ModelInner::Onnx {
                 session: Mutex::new(session),
-                tokenizer,
+                tokenizer: Box::new(tokenizer),
             },
             embedding_dim: config.dimensions,
         })
