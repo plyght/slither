@@ -14,6 +14,7 @@ const MULTI_SOURCE_BOOST: f64 = 0.01;
 const JUNK_URL_PENALTY: f64 = -0.03;
 const DEEP_PATH_PENALTY: f64 = -0.006;
 const ERROR_PAGE_PENALTY: f64 = -0.025;
+const PROFILE_PAGE_PENALTY: f64 = -0.015;
 
 pub fn reciprocal_rank_fusion(
     lists: &[Vec<SearchResult>],
@@ -91,6 +92,10 @@ fn compute_url_boost(url: &str, title: &str, query_lower: &str, query_terms: &[&
 
     if is_error_page(&title_lower) {
         boost += ERROR_PAGE_PENALTY;
+    }
+
+    if is_profile_page(&path_lower) {
+        boost += PROFILE_PAGE_PENALTY;
     }
 
     let query_no_spaces: String = query_lower.chars().filter(|c| !c.is_whitespace()).collect();
@@ -192,6 +197,16 @@ fn is_junk_url(path_lower: &str, title: &str) -> bool {
         }
     }
 
+    false
+}
+
+fn is_profile_page(path_lower: &str) -> bool {
+    static PROFILE_PATTERNS: &[&str] = &["/@", "/users/", "/user/", "/profile/", "/people/", "/u/"];
+    for pat in PROFILE_PATTERNS {
+        if path_lower.starts_with(pat) || path_lower.contains(pat) {
+            return true;
+        }
+    }
     false
 }
 
