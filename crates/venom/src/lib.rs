@@ -52,10 +52,11 @@ impl Ranker {
                 let text_results = self.index.search(&query.text, pool)?;
 
                 let max_bm25 = text_results.first().map(|r| r.score).unwrap_or(0.0);
-                let score_floor = max_bm25 * 0.3;
+                let score_floor = max_bm25 * 0.5;
                 let text_filtered: Vec<SearchResult> = text_results
                     .into_iter()
                     .filter(|r| r.score >= score_floor)
+                    .take(50)
                     .collect();
 
                 let candidate_ids: HashSet<u64> = text_filtered.iter().map(|r| r.doc_id).collect();
