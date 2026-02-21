@@ -1295,6 +1295,57 @@ body[data-state="results"] .site-footer::before {
     }
 }
 
+.suggest-box {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-top: none;
+    border-radius: 0 0 8px 8px;
+    z-index: 100;
+    max-height: 240px;
+    overflow-y: auto;
+}
+
+.suggest-item {
+    padding: 10px 16px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.suggest-item:hover,
+.suggest-item:focus {
+    background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+}
+
+.load-more-wrap {
+    text-align: center;
+    padding: 24px 0 8px;
+}
+
+.load-more-btn {
+    background: none;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    padding: 8px 24px;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.load-more-btn:hover {
+    color: var(--text-primary);
+    border-color: var(--text-primary);
+}
+
 @media print {
     body::before { display: none; }
     .palette-btn, .kbd-hint, .search-modes { display: none; }

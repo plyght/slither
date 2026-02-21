@@ -5,6 +5,12 @@
         ? 'https://search.peril.lol'
         : '';
     var currentMode = 'hybrid';
+    var currentOffset = 0;
+    var currentQuery = '';
+    var limit = 20;
+    var suggestBox;
+    var suggestTimer = null;
+    var suggestController = null;
     var currentController = null;
     var docCount = null;
 
@@ -143,8 +149,58 @@
         statsInterval = setInterval(fetchStats, 30000);
     }
 
+    function buildResultHtml(r) {
+        var scorePercent = typeof r.score === 'number' ? Math.min(100, Math.round(r.score * 100)) : null;
+        var externalIcon = '<svg class="external-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3H3v10h10v-3"/><path d="M9 2h5v5"/><path d="M14 2L7 9"/></svg>';
+        return '<article class="result">' +
+            '<cite class="result-url">' + escapeHtml(formatUrl(r.url)) + '</cite>' +
+            '<h3><a href="' + escapeHtml(r.url) + '" class="result-title" target="_blank" rel="noopener">' + escapeHtml(r.title || 'Untitled') + externalIcon + '</a></h3>' +
+            '<p class="result-snippet">' + highlightTerms(truncateSnippet(r.snippet, 280), currentQuery) + '</p>' +
+            (scorePercent !== null ? '<div class="result-score"><div class="result-score-bar"><div class="result-score-fill" style="width:' + scorePercent + '%"></div></div>' + (scorePercent / 100).toFixed(2) + '</div>' : '') +
+            '</article>';
+    }
+
+    function fetchSuggestions(query) {
+        if (suggestController) suggestController.abort();
+        suggestController = new AbortController();
+
+        fetch(API_BASE + '/suggest?q=' + encodeURIComponent(query) + '&limit=5', {
+            signal: suggestController.signal
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.success && data.data && data.data.length > 0) {
+                renderSuggestions(data.data, query);
+            } else {
+                hideSuggestions();
+            }
+        })
+        .catch(function() {});
+    }
+
+    function renderSuggestions(titles, query) {
+        acHide();
+        var html = '';
+        for (var i = 0; i < titles.length; i++) {
+            html += '<div class="suggest-item" role="option" data-index="' + i + '">' +
+                    escapeHtml(titles[i]) + '</div>';
+        }
+        suggestBox.innerHTML = html;
+        suggestBox.style.display = 'block';
+    }
+
+    function hideSuggestions() {
+        if (!suggestBox) return;
+        suggestBox.innerHTML = '';
+        suggestBox.style.display = 'none';
+    }
+
     function doSearch(query, mode, pushState) {
         if (!query.trim()) return;
+
+        currentOffset = 0;
+        currentQuery = query.trim();
+        if (suggestBox) hideSuggestions();
 
         if (currentController) {
             currentController.abort();
@@ -157,7 +213,7 @@
         resultsMeta.textContent = '';
 
         var startTime = performance.now();
-        var params = '?q=' + encodeURIComponent(query.trim()) + '&limit=20&mode=' + mode;
+        var params = '?q=' + encodeURIComponent(query.trim()) + '&limit=' + limit + '&mode=' + mode;
 
         if (pushState) {
             var newUrl = window.location.pathname + '?q=' + encodeURIComponent(query.trim()) + '&mode=' + mode;
@@ -242,6 +298,9 @@
                     html += '</div></div>';
                 });
                 resultsList.innerHTML = html;
+                if (results.length >= limit) {
+                    resultsList.innerHTML += '<div class="load-more-wrap"><button class="load-more-btn" onclick="window.__loadMore()">Load more results</button></div>';
+                }
             })
             .catch(function (err) {
                 searchInput.classList.remove('loading');
@@ -259,11 +318,32 @@
         doSearch(searchInput.value, currentMode, false);
     };
 
+    window.__loadMore = function () {
+        currentOffset += limit;
+        fetch(API_BASE + '/search?q=' + encodeURIComponent(currentQuery) + '&limit=' + limit + '&offset=' + currentOffset + '&mode=' + currentMode)
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (data.success && data.data) {
+                var moreBtn = document.querySelector('.load-more-wrap');
+                if (moreBtn) moreBtn.remove();
+                var html = '';
+                for (var i = 0; i < data.data.length; i++) {
+                    html += buildResultHtml(data.data[i]);
+                }
+                resultsList.innerHTML += html;
+                if (data.data.length >= limit) {
+                    resultsList.innerHTML += '<div class="load-more-wrap"><button class="load-more-btn" onclick="window.__loadMore()">Load more results</button></div>';
+                }
+            }
+        });
+    };
+
     function goHome() {
         setState('home');
         searchInput.value = '';
         updateClearBtn();
         acDismiss();
+        if (suggestBox) hideSuggestions();
         resultsList.innerHTML = '';
         resultsMeta.textContent = '';
         searchInput.focus();
@@ -361,6 +441,7 @@
             .then(function (r) { return r.json(); })
             .then(function (data) {
                 if (document.activeElement !== searchInput) return;
+                if (suggestBox && suggestBox.style.display === 'block') return;
                 if (data.success && data.data && data.data.length > 0) {
                     acRender(data.data, query);
                 } else {
@@ -614,6 +695,35 @@
     function init() {
         fetchStats();
         startStatsPolling();
+
+        suggestBox = document.createElement('div');
+        suggestBox.className = 'suggest-box';
+        suggestBox.setAttribute('role', 'listbox');
+        searchInput.parentNode.style.position = 'relative';
+        searchInput.parentNode.appendChild(suggestBox);
+
+        searchInput.addEventListener('input', function () {
+            var val = searchInput.value.trim();
+            clearTimeout(suggestTimer);
+            if (val.length < 2) { hideSuggestions(); return; }
+            suggestTimer = setTimeout(function () { fetchSuggestions(val); }, 150);
+        });
+
+        suggestBox.addEventListener('click', function (e) {
+            var item = e.target.closest('.suggest-item');
+            if (item) {
+                searchInput.value = item.textContent;
+                hideSuggestions();
+                updateClearBtn();
+                doSearch(item.textContent, currentMode, true);
+            }
+        });
+
+        document.addEventListener('click', function (e) {
+            if (!searchInput.contains(e.target) && !suggestBox.contains(e.target)) {
+                hideSuggestions();
+            }
+        });
 
         var params = new URLSearchParams(window.location.search);
         var q = params.get('q');

@@ -5,17 +5,35 @@
 //   [0..] u64 LE doc_ids, one per vector, same order
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use instant_distance::{Builder, HnswMap, Search};
 use memmap2::Mmap;
 use slither_core::{EmbedderConfig, SlitherError};
 use std::collections::{BinaryHeap, HashSet};
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
-use std::path::PathBuf;
-use tracing::debug;
+use std::path::{Path, PathBuf};
+use tracing::{debug, info};
 
 const MAGIC: &[u8; 8] = b"SLITHVEC";
 const VERSION: u32 = 1;
 const HEADER_SIZE: usize = 24;
+
+#[derive(Clone)]
+struct VectorPoint {
+    data: Vec<f32>,
+}
+
+impl instant_distance::Point for VectorPoint {
+    fn distance(&self, other: &Self) -> f32 {
+        let dot: f32 = self
+            .data
+            .iter()
+            .zip(other.data.iter())
+            .map(|(a, b)| a * b)
+            .sum();
+        1.0 - dot
+    }
+}
 
 pub(crate) struct VectorStorage {
     vectors_path: PathBuf,
@@ -23,6 +41,7 @@ pub(crate) struct VectorStorage {
     dimensions: usize,
     vector_count: u64,
     stored_ids: HashSet<u64>,
+    hnsw_index: Option<HnswMap<VectorPoint, u64>>,
 }
 
 #[derive(PartialEq)]
@@ -73,13 +92,73 @@ impl VectorStorage {
             vectors_path
         );
 
+        let hnsw_index = if vector_count > 1000 {
+            Self::build_hnsw(&vectors_path, &vecmap_path, dimensions, vector_count)
+        } else {
+            None
+        };
+
         Ok(Self {
             vectors_path,
             vecmap_path,
             dimensions,
             vector_count,
             stored_ids,
+            hnsw_index,
         })
+    }
+
+    fn build_hnsw(
+        vectors_path: &Path,
+        vecmap_path: &Path,
+        dimensions: usize,
+        count: u64,
+    ) -> Option<HnswMap<VectorPoint, u64>> {
+        let t0 = std::time::Instant::now();
+        let n = count as usize;
+        let vector_bytes = dimensions * 4;
+
+        let vf = File::open(vectors_path).ok()?;
+        let mmap = unsafe { Mmap::map(&vf) }.ok()?;
+
+        let mf = File::open(vecmap_path).ok()?;
+        let mmap_ids = unsafe { Mmap::map(&mf) }.ok()?;
+
+        let expected_len = HEADER_SIZE + n * vector_bytes;
+        if mmap.len() < expected_len || mmap_ids.len() < n * 8 {
+            return None;
+        }
+
+        let data_region = &mmap[HEADER_SIZE..HEADER_SIZE + n * vector_bytes];
+        let ids_region = &mmap_ids[..n * 8];
+
+        let mut points: Vec<VectorPoint> = Vec::with_capacity(n);
+        let mut values: Vec<u64> = Vec::with_capacity(n);
+
+        for i in 0..n {
+            let id_offset = i * 8;
+            let doc_id = u64::from_le_bytes(ids_region[id_offset..id_offset + 8].try_into().ok()?);
+
+            let vec_offset = i * vector_bytes;
+            let vec_bytes = &data_region[vec_offset..vec_offset + vector_bytes];
+            // x86_64 is little-endian and mmap is page-aligned, so the base is
+            // aligned.  Each row starts at a multiple of dim*4 bytes from the
+            // page-aligned base, so the pointer is always 4-byte aligned — safe
+            // to reinterpret as &[f32].
+            let vec_f32: &[f32] =
+                unsafe { std::slice::from_raw_parts(vec_bytes.as_ptr() as *const f32, dimensions) };
+
+            points.push(VectorPoint {
+                data: vec_f32.to_vec(),
+            });
+            values.push(doc_id);
+        }
+
+        let hnsw = Builder::default()
+            .ef_construction(100)
+            .build(points, values);
+        info!("HNSW index built: {} vectors in {:?}", n, t0.elapsed());
+        Some(hnsw)
     }
 
     fn load_stored_ids(
@@ -214,6 +293,27 @@ impl VectorStorage {
         if count == 0 {
             return Ok(Vec::new());
         }
+
+        if let Some(ref hnsw) = self.hnsw_index {
+            let query_point = VectorPoint {
+                data: query.to_vec(),
+            };
+            let mut search = Search::default();
+            let mut results: Vec<(u64, f32)> = hnsw
+                .search(&query_point, &mut search)
+                .take(limit)
+                .map(|item| {
+                    let doc_id = *item.value;
+                    let similarity = 1.0 - item.distance;
+                    (doc_id, similarity)
+                })
+                .collect();
+            results.sort_unstable_by(|a, b| {
+                b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
+            });
+            return Ok(results);
+        }
+
         self.scan_vectors(query, limit, count as usize, None)
     }
 

@@ -2,7 +2,7 @@ use axum::{
     extract::Query,
     extract::Request,
     extract::State,
-    http::{header, StatusCode},
+    http::{header, HeaderName, StatusCode},
     middleware::Next,
     response::{IntoResponse, Json, Response},
     routing::{get, post},
@@ -19,7 +19,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tome::Index;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
 use venom::Ranker;
 
@@ -109,6 +109,8 @@ pub struct SearchParams {
     pub limit: usize,
     #[serde(default)]
     pub mode: String,
+    #[serde(default)]
+    pub offset: usize,
 }
 
 fn default_limit() -> usize {
@@ -134,7 +136,7 @@ impl From<SearchResult> for SearchResultJson {
     }
 }
 
-type SharedRanker = Arc<tokio::sync::Mutex<Ranker>>;
+type SharedRanker = Arc<tokio::sync::RwLock<Ranker>>;
 
 pub async fn serve(config: SlitherConfig, host: &str, port: u16) -> SlitherResult<()> {
     println!("Starting API server on http://{}:{}", host, port);
@@ -143,12 +145,16 @@ pub async fn serve(config: SlitherConfig, host: &str, port: u16) -> SlitherResul
     let embedder = Iris::new(config.embedder.clone())?;
     let ranker = Ranker::new(index, embedder);
 
-    let shared_rankers = Arc::new(tokio::sync::Mutex::new(ranker));
+    let shared_rankers = Arc::new(tokio::sync::RwLock::new(ranker));
 
     let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
+        .allow_origin(AllowOrigin::list([
+            "https://search.peril.lol".parse().unwrap(),
+            "http://localhost:8000".parse().unwrap(),
+            "http://127.0.0.1:8000".parse().unwrap(),
+        ]))
+        .allow_methods([axum::http::Method::GET, axum::http::Method::POST, axum::http::Method::DELETE])
+        .allow_headers([header::CONTENT_TYPE, HeaderName::from_static("x-api-key")]);
 
     let static_dir = format!("{}/static", config.data_dir);
     std::fs::create_dir_all(&static_dir).ok();
@@ -159,6 +165,7 @@ pub async fn serve(config: SlitherConfig, host: &str, port: u16) -> SlitherResul
 
     let search_router = Router::new()
         .route("/search", get(search_handler))
+        .route("/suggest", get(suggest_handler))
         .route("/stats", get(stats_handler))
         .route("/health", get(health_handler))
         .with_state(shared_rankers.clone());
@@ -209,7 +216,8 @@ pub async fn serve(config: SlitherConfig, host: &str, port: u16) -> SlitherResul
     let listener = tokio::net::TcpListener::bind(addr).await?;
     println!("API server running at http://{}:{}", host, port);
     println!("Endpoints:");
-    println!("  GET /search?q=<query>&limit=<n>&mode=<text|semantic|hybrid>");
+    println!("  GET /search?q=<query>&limit=<n>&mode=<text|semantic|hybrid>&offset=<n>");
+    println!("  GET /suggest?q=<query>&limit=<n>");
     println!("  GET /stats");
     println!("  GET /health");
     println!("  GET /favicon?domain=<domain>");
@@ -248,22 +256,54 @@ async fn search_handler(
         limit,
     };
 
-    let mut ranker = rankers.lock().await;
+    let mut ranker = rankers.write().await;
 
     match ranker.search(&query, mode) {
         Ok(results) => {
-            let json_results: Vec<SearchResultJson> =
-                results.into_iter().map(|r| r.into()).collect();
+            let json_results: Vec<SearchResultJson> = results.into_iter().skip(params.offset).map(|r| r.into()).collect();
             Json(ApiResponse::ok(json_results))
         }
         Err(e) => Json(ApiResponse::err(&e.to_string())),
     }
 }
 
+#[derive(Debug, Deserialize)]
+struct SuggestParams {
+    q: String,
+    #[serde(default = "default_suggest_limit")]
+    limit: usize,
+}
+
+fn default_suggest_limit() -> usize {
+    5
+}
+
+async fn suggest_handler(
+    Query(params): Query<SuggestParams>,
+    State(rankers): State<SharedRanker>,
+) -> Json<ApiResponse<Vec<String>>> {
+    let q = params.q.trim();
+    if q.len() < 2 {
+        return Json(ApiResponse::ok(Vec::new()));
+    }
+    let limit = if params.limit == 0 { 5 } else { params.limit.min(10) };
+    let mut ranker = rankers.write().await;
+    match ranker.search(
+        &slither_core::SearchQuery { text: q.to_string(), limit },
+        slither_core::SearchMode::Text,
+    ) {
+        Ok(results) => {
+            let titles: Vec<String> = results.into_iter().map(|r| r.title).collect();
+            Json(ApiResponse::ok(titles))
+        }
+        Err(_) => Json(ApiResponse::ok(Vec::new())),
+    }
+}
+
 async fn stats_handler(
     State(rankers): State<SharedRanker>,
 ) -> Json<ApiResponse<serde_json::Value>> {
-    let ranker = rankers.lock().await;
+    let ranker = rankers.read().await;
     let doc_count = ranker.doc_count();
 
     Json(ApiResponse::ok(serde_json::json!({
@@ -354,7 +394,7 @@ async fn admin_crawl_handler(
         if let Ok(new_index) = Index::open(std::path::Path::new(&config.index.data_dir)) {
             if let Ok(new_embedder) = Iris::new(config.embedder.clone()) {
                 let new_ranker = Ranker::new(new_index, new_embedder);
-                let mut guard = ranker.lock().await;
+                let mut guard = ranker.write().await;
                 *guard = new_ranker;
                 drop(guard);
                 tracing::info!("index auto-reloaded after crawl");
@@ -378,7 +418,7 @@ async fn admin_status_handler(State(state): State<AdminState>) -> Json<ApiRespon
     let crawling = state.is_crawling.load(Ordering::SeqCst);
     let last_crawl = state.last_crawl.lock().await.clone();
     let seed_count = seeds::load_seeds(&state.config.data_dir).len();
-    let doc_count = state.ranker.lock().await.doc_count();
+    let doc_count = state.ranker.read().await.doc_count();
 
     Json(ApiResponse::ok(AdminStatus {
         crawling,
@@ -400,11 +440,11 @@ async fn admin_reload_handler(State(state): State<AdminState>) -> Json<ApiRespon
     };
     let new_ranker = Ranker::new(new_index, new_embedder);
 
-    let mut guard = state.ranker.lock().await;
+    let mut guard = state.ranker.write().await;
     *guard = new_ranker;
     drop(guard);
 
-    let doc_count = state.ranker.lock().await.doc_count();
+    let doc_count = state.ranker.read().await.doc_count();
     Json(ApiResponse::ok(format!("index reloaded, {} documents", doc_count)))
 }
 

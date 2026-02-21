@@ -18,6 +18,7 @@ const DEEP_PATH_PENALTY: f64 = -0.006;
 const ERROR_PAGE_PENALTY: f64 = -0.025;
 const PROFILE_PAGE_PENALTY: f64 = -0.015;
 const TLD_BOOST: f64 = 0.02;
+const FRESHNESS_BOOST: f64 = 0.008;
 
 pub fn reciprocal_rank_fusion(
     lists: &[Vec<SearchResult>],
@@ -63,6 +64,12 @@ pub fn reciprocal_rank_fusion(
             })
         })
         .collect();
+
+    let max_id = fused.iter().map(|r| r.doc_id).max().unwrap_or(1);
+    for result in fused.iter_mut() {
+        let freshness = (result.doc_id as f64) / (max_id as f64);
+        result.score += (FRESHNESS_BOOST * freshness) as f32;
+    }
 
     fused.sort_by(|a, b| {
         b.score

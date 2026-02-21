@@ -1,11 +1,20 @@
+use dashmap::DashMap;
 use reqwest::Client;
 use slither_core::{RawPage, SlitherError};
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use url::Url;
 
+#[derive(Clone, Debug)]
+struct CachedHeaders {
+    etag: Option<String>,
+    last_modified: Option<String>,
+}
+
 pub struct Fetcher {
     pub client: Client,
+    cache: Arc<DashMap<String, CachedHeaders>>,
 }
 
 impl Fetcher {
@@ -19,7 +28,7 @@ impl Fetcher {
             .build()
             .map_err(|e| SlitherError::Crawl(format!("failed to build HTTP client: {}", e)))?;
 
-        Ok(Self { client })
+        Ok(Self { client, cache: Arc::new(DashMap::new()) })
     }
 
     pub async fn fetch(&self, url: &str) -> Option<RawPage> {
@@ -33,7 +42,17 @@ impl Fetcher {
 
         let domain = parsed.host_str().unwrap_or("").to_string();
 
-        let response = match self.client.get(url).send().await {
+        let mut request = self.client.get(url);
+        if let Some(cached) = self.cache.get(url) {
+            if let Some(ref etag) = cached.etag {
+                request = request.header("If-None-Match", etag.as_str());
+            }
+            if let Some(ref lm) = cached.last_modified {
+                request = request.header("If-Modified-Since", lm.as_str());
+            }
+        }
+
+        let response = match request.send().await {
             Ok(r) => r,
             Err(e) => {
                 tracing::warn!("fetch error for {}: {}", url, e);
@@ -43,9 +62,20 @@ impl Fetcher {
 
         let status = response.status().as_u16();
 
+        if response.status() == reqwest::StatusCode::NOT_MODIFIED {
+            tracing::debug!("304 Not Modified for {}", url);
+            return None;
+        }
+
         if !response.status().is_success() {
             tracing::debug!("non-success status {} for {}", status, url);
             return None;
+        }
+
+        let etag = response.headers().get("etag").and_then(|v| v.to_str().ok()).map(|s| s.to_string());
+        let last_modified = response.headers().get("last-modified").and_then(|v| v.to_str().ok()).map(|s| s.to_string());
+        if etag.is_some() || last_modified.is_some() {
+            self.cache.insert(url.to_string(), CachedHeaders { etag, last_modified });
         }
 
         let content_type = response.headers()

@@ -37,6 +37,7 @@ governor = "0.8"
 dashmap = "6"
 memmap2 = "0.9"
 byteorder = "1"
+instant-distance = "0.6"
 parking_lot = "0.12"
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 ort = { version = "2.0.0-rc.11" }
