@@ -150,8 +150,14 @@ pub async fn serve(config: SlitherConfig, host: &str, port: u16) -> SlitherResul
     let cors = CorsLayer::new()
         .allow_origin(AllowOrigin::list([
             "https://search.peril.lol".parse().unwrap(),
+            "http://localhost:3000".parse().unwrap(),
+            "http://localhost:5000".parse().unwrap(),
             "http://localhost:8000".parse().unwrap(),
+            "http://localhost:8080".parse().unwrap(),
+            "http://127.0.0.1:3000".parse().unwrap(),
+            "http://127.0.0.1:5000".parse().unwrap(),
             "http://127.0.0.1:8000".parse().unwrap(),
+            "http://127.0.0.1:8080".parse().unwrap(),
         ]))
         .allow_methods([axum::http::Method::GET, axum::http::Method::POST, axum::http::Method::DELETE])
         .allow_headers([header::CONTENT_TYPE, HeaderName::from_static("x-api-key")]);

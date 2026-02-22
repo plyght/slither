@@ -1,9 +1,13 @@
 (function () {
     'use strict';
 
-    var API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-        ? 'https://search.peril.lol'
-        : '';
+    var API_BASE = (function() {
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            var backendPort = new URLSearchParams(window.location.search).get('api_port') || '8080';
+            return 'http://' + window.location.hostname + ':' + backendPort;
+        }
+        return '';
+    })();
     var currentMode = 'hybrid';
     var currentOffset = 0;
     var currentQuery = '';
@@ -237,7 +241,7 @@
                 var html = '';
                 var globalIdx = 0;
                 grouped.forEach(function (group) {
-                    var faviconSrc = '/favicon?domain=' + encodeURIComponent(group.domain);
+                    var faviconSrc = API_BASE + '/favicon?domain=' + encodeURIComponent(group.domain);
                     html += '<div class="domain-group" style="--i:' + globalIdx + '">' +
                         '<div class="domain-header">' +
                         '<img class="domain-favicon" src="' + faviconSrc + '" alt="" width="16" height="16" loading="lazy" onerror="this.style.display=\'none\'">' +
@@ -367,7 +371,7 @@
             var title = highlightTerms(r.title || 'Untitled', query);
             var url = escapeHtml(formatUrl(r.url));
             var hostname = extractHostname(r.url);
-            var faviconSrc = '/favicon?domain=' + encodeURIComponent(hostname);
+            var faviconSrc = API_BASE + '/favicon?domain=' + encodeURIComponent(hostname);
             html += '<li class="autocomplete-item" id="ac-item-' + i + '" role="option" data-index="' + i + '">' +
                 '<img class="autocomplete-item-icon" src="' + faviconSrc + '" alt="" width="16" height="16" loading="lazy" onerror="this.style.opacity=\'0\'">' +
                 '<div class="autocomplete-item-content">' +

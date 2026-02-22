@@ -220,6 +220,11 @@ impl Index {
             return Ok(());
         }
 
+        if should_skip_document(doc) {
+            debug!(doc_id = doc.id, url = %doc.url, "skipping junk/error document");
+            return Ok(());
+        }
+
         let title_tokens = tokenize(&doc.title);
         let body_tokens = tokenize(&doc.body);
 
@@ -580,4 +585,61 @@ impl Tome {
     pub fn doc_count(&self) -> u64 {
         self.inner.doc_count() as u64
     }
+}
+
+const MIN_BODY_WORDS: usize = 15;
+
+fn should_skip_document(doc: &Document) -> bool {
+    let body_words: Vec<&str> = doc.body.split_whitespace().collect();
+    let word_count = body_words.len();
+
+    if word_count < MIN_BODY_WORDS {
+        return true;
+    }
+
+    if doc.title.is_empty() && doc.body.len() < 100 {
+        return true;
+    }
+
+    let mut seen = std::collections::HashSet::new();
+    for w in &body_words {
+        seen.insert(w.to_ascii_lowercase());
+    }
+    let unique_ratio = seen.len() as f32 / word_count as f32;
+
+    if unique_ratio < 0.25 {
+        return true;
+    }
+
+    let sentence_count = doc
+        .body
+        .split(['.', '!', '?'])
+        .filter(|s| s.split_whitespace().count() >= 5)
+        .count();
+
+    if sentence_count == 0 && word_count < 80 {
+        return true;
+    }
+
+    if !doc.title.is_empty() {
+        let title_lower = doc.title.to_lowercase();
+        let title_words: std::collections::HashSet<&str> =
+            title_lower.split_whitespace().collect();
+        let body_lower = doc.body.to_lowercase();
+        let body_word_set: std::collections::HashSet<&str> =
+            body_lower.split_whitespace().collect();
+
+        if !title_words.is_empty() && !body_word_set.is_empty() {
+            let overlap = title_words
+                .intersection(&body_word_set)
+                .count() as f32
+                / title_words.len() as f32;
+
+            if overlap > 0.8 && word_count < 40 {
+                return true;
+            }
+        }
+    }
+
+    false
 }

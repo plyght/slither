@@ -333,7 +333,7 @@ fn is_profile_page(path_lower: &str) -> bool {
     false
 }
 
-fn is_error_page(title_lower: &str) -> bool {
+pub fn is_error_page(title_lower: &str) -> bool {
     static ERROR_PATTERNS: &[&str] = &[
         "502: bad gateway",
         "502 bad gateway",
