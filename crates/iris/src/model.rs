@@ -47,9 +47,13 @@ impl EmbeddingModel {
             });
         }
 
+        let intra_threads = std::thread::available_parallelism()
+            .map(|n| (n.get() / 2).max(2))
+            .unwrap_or(4);
+
         let session = Session::builder()
             .map_err(|e| SlitherError::Embedding(e.to_string()))?
-            .with_intra_threads(1)
+            .with_intra_threads(intra_threads)
             .map_err(|e| SlitherError::Embedding(e.to_string()))?
             .commit_from_file(model_path)
             .map_err(|e| SlitherError::Embedding(e.to_string()))?;
@@ -57,7 +61,10 @@ impl EmbeddingModel {
         let tokenizer = Tokenizer::from_file(&tokenizer_path)
             .map_err(|e| SlitherError::Embedding(e.to_string()))?;
 
-        info!("Loaded ONNX embedding model from {:?}", model_path);
+        info!(
+            "Loaded ONNX embedding model from {:?} (intra_threads={})",
+            model_path, intra_threads
+        );
 
         Ok(Self {
             inner: ModelInner::Onnx {
@@ -80,6 +87,139 @@ impl EmbeddingModel {
             }
         }
     }
+
+    pub fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, SlitherError> {
+        if texts.is_empty() {
+            return Ok(Vec::new());
+        }
+        if texts.len() == 1 {
+            return Ok(vec![self.embed(texts[0])?]);
+        }
+        match &self.inner {
+            ModelInner::Fallback => texts
+                .iter()
+                .map(|t| Ok(fallback_embed(t, self.embedding_dim)))
+                .collect(),
+            ModelInner::Onnx { session, tokenizer } => {
+                embed_batch_onnx(texts, session, tokenizer, self.embedding_dim)
+            }
+        }
+    }
+}
+
+fn embed_batch_onnx(
+    texts: &[&str],
+    session: &Mutex<Session>,
+    tokenizer: &Tokenizer,
+    embedding_dim: usize,
+) -> Result<Vec<Vec<f32>>, SlitherError> {
+    let encodings: Vec<_> = texts
+        .iter()
+        .map(|t| {
+            tokenizer
+                .encode(*t, true)
+                .map_err(|e| SlitherError::Embedding(e.to_string()))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let batch_size = encodings.len();
+    let max_len = encodings
+        .iter()
+        .map(|e| e.get_ids().len())
+        .max()
+        .unwrap_or(0);
+
+    if max_len == 0 {
+        return Ok(vec![vec![0.0; embedding_dim]; batch_size]);
+    }
+
+    let mut input_ids = vec![0i64; batch_size * max_len];
+    let mut attention_masks = vec![0i64; batch_size * max_len];
+    let mut token_type_ids_flat = vec![0i64; batch_size * max_len];
+
+    for (i, enc) in encodings.iter().enumerate() {
+        let ids = enc.get_ids();
+        let mask = enc.get_attention_mask();
+        let types = enc.get_type_ids();
+        let row = i * max_len;
+        for (j, (&id, (&m, &t))) in ids.iter().zip(mask.iter().zip(types.iter())).enumerate() {
+            input_ids[row + j] = id as i64;
+            attention_masks[row + j] = m as i64;
+            token_type_ids_flat[row + j] = t as i64;
+        }
+    }
+
+    let ids_arr = Array2::from_shape_vec((batch_size, max_len), input_ids)
+        .map_err(|e| SlitherError::Embedding(e.to_string()))?;
+    let mask_arr = Array2::from_shape_vec((batch_size, max_len), attention_masks)
+        .map_err(|e| SlitherError::Embedding(e.to_string()))?;
+    let types_arr = Array2::from_shape_vec((batch_size, max_len), token_type_ids_flat)
+        .map_err(|e| SlitherError::Embedding(e.to_string()))?;
+
+    let ids_tensor = TensorRef::from_array_view(ids_arr.view())
+        .map_err(|e| SlitherError::Embedding(e.to_string()))?;
+    let mask_tensor = TensorRef::from_array_view(mask_arr.view())
+        .map_err(|e| SlitherError::Embedding(e.to_string()))?;
+    let types_tensor = TensorRef::from_array_view(types_arr.view())
+        .map_err(|e| SlitherError::Embedding(e.to_string()))?;
+
+    let mut guard = session.lock();
+    let outputs = guard
+        .run(ort::inputs![
+            "input_ids"      => ids_tensor,
+            "attention_mask" => mask_tensor,
+            "token_type_ids" => types_tensor,
+        ])
+        .map_err(|e| SlitherError::Embedding(e.to_string()))?;
+
+    let tensor = outputs[0]
+        .try_extract_array::<f32>()
+        .map_err(|e| SlitherError::Embedding(e.to_string()))?;
+
+    let shape = tensor.shape().to_vec();
+    if shape.len() != 3 {
+        return Err(SlitherError::Embedding(format!(
+            "unexpected output rank {}, want 3 [batch, seq, dim]",
+            shape.len()
+        )));
+    }
+    let out_seq = shape[1];
+    let out_dim = shape[2];
+
+    let flat = tensor
+        .as_slice()
+        .ok_or_else(|| SlitherError::Embedding("output tensor is not contiguous".into()))?;
+
+    let mut results = Vec::with_capacity(batch_size);
+    for i in 0..batch_size {
+        let mask_f32: Vec<f32> = encodings[i]
+            .get_attention_mask()
+            .iter()
+            .map(|&x| x as f32)
+            .collect();
+        let mask_sum: f32 = mask_f32.iter().sum::<f32>().max(1e-9);
+
+        let mut pooled = vec![0.0f32; out_dim];
+        for j in 0..out_seq {
+            let m = mask_f32.get(j).copied().unwrap_or(0.0);
+            if m == 0.0 {
+                continue;
+            }
+            let base = (i * out_seq + j) * out_dim;
+            for k in 0..out_dim {
+                pooled[k] += flat[base + k] * m;
+            }
+        }
+        for v in pooled.iter_mut() {
+            *v /= mask_sum;
+        }
+
+        crate::search::l2_normalize(&mut pooled);
+        pooled.resize(embedding_dim, 0.0);
+        results.push(pooled);
+    }
+
+    Ok(results)
 }
 
 fn embed_onnx(

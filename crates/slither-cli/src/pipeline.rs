@@ -59,73 +59,111 @@ pub async fn crawl(config: SlitherConfig, seeds: Vec<Seed>) -> SlitherResult<()>
     let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
         .expect("failed to register SIGTERM handler");
 
+    const BATCH_SIZE: usize = 32;
+    let batch_timeout = std::time::Duration::from_millis(100);
+    let mut buffer: Vec<RawPage> = Vec::with_capacity(BATCH_SIZE);
+    let mut done = false;
+
     loop {
-        tokio::select! {
-            _ = &mut ctrl_c => {
-                println!("\nInterrupted (SIGINT) — flushing index...");
-                break;
-            }
-            _ = sigterm.recv() => {
-                println!("\nTerminated (SIGTERM) — flushing index...");
-                break;
-            }
-            msg = rx.recv() => {
-                match msg {
-                    None => break,
-                    Some(raw_page) => {
-                        pages_crawled += 1;
-                        let page_url = raw_page.url.clone();
-                        let page_domain = raw_page.domain.clone();
-                        let transformer_clone = transformer.clone();
+        let pages_before_fill = pages_crawled;
 
-                        let doc_result = tokio::task::spawn_blocking(move || {
-                            match transformer_clone.transform(&raw_page) {
-                                Ok(doc) => {
-                                    let quality = fang::content_quality_score(&doc.body);
-                                    Some((doc, quality))
-                                }
-                                Err(e) => {
-                                    tracing::warn!("transform error for {}: {e}", raw_page.url);
-                                    None
-                                }
+        while !done && buffer.len() < BATCH_SIZE {
+            tokio::select! {
+                biased;
+                _ = &mut ctrl_c => {
+                    println!("\nInterrupted (SIGINT) — flushing index...");
+                    done = true;
+                }
+                _ = sigterm.recv() => {
+                    println!("\nTerminated (SIGTERM) — flushing index...");
+                    done = true;
+                }
+                msg = rx.recv() => {
+                    match msg {
+                        None => { done = true; }
+                        Some(raw_page) => {
+                            pages_crawled += 1;
+                            buffer.push(raw_page);
+                        }
+                    }
+                }
+                _ = tokio::time::sleep(batch_timeout), if !buffer.is_empty() => {
+                    break;
+                }
+            }
+        }
+
+        if !buffer.is_empty() {
+            let batch = std::mem::replace(&mut buffer, Vec::with_capacity(BATCH_SIZE));
+            let transformer_clone = transformer.clone();
+
+            let transform_results = tokio::task::spawn_blocking(move || {
+                batch
+                    .into_iter()
+                    .map(|raw_page| {
+                        let url = raw_page.url.clone();
+                        let domain = raw_page.domain.clone();
+                        match transformer_clone.transform(&raw_page) {
+                            Ok(doc) => {
+                                let quality = fang::content_quality_score(&doc.body);
+                                Some((doc, quality, url, domain))
                             }
-                        }).await;
-
-                        if let Ok(Some((doc, quality))) = doc_result {
-                            let is_homepage = is_homepage_url(&page_url);
-                            if quality < 0.15 && !is_homepage {
-                                debug!("skipping low-quality page ({quality:.2}): {}", page_url);
-                            } else {
-                                if let std::collections::hash_map::Entry::Vacant(e) = domain_favicons.entry(page_domain) {
-                                    e.insert(doc.favicon_url.clone());
-                                }
-                                match ranker.index_document(&doc) {
-                                    Ok(()) => pages_indexed += 1,
-                                    Err(e) => {
-                                        warn!("index error for {}: {e}", page_url);
-                                    }
-                                }
+                            Err(e) => {
+                                tracing::warn!("transform error for {url}: {e}");
+                                None
                             }
                         }
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .await;
 
-                        if pages_crawled.is_multiple_of(100) {
-                            let (can_continue, status) = check_storage_limits(
-                                &config.index.data_dir,
-                                &config.embedder.data_dir,
-                                &config.storage,
-                            );
-                            println!(
-                                "  Crawled {} pages, indexed {} documents | {}",
-                                pages_crawled, pages_indexed, status
-                            );
-                            if !can_continue {
-                                println!("\nStopping crawl: {}", status);
-                                break;
-                            }
+            if let Ok(results) = transform_results {
+                let mut docs_to_index = Vec::new();
+                for (doc, quality, page_url, page_domain) in results.into_iter().flatten() {
+                    let is_homepage = is_homepage_url(&page_url);
+                    if quality < 0.15 && !is_homepage {
+                        debug!("skipping low-quality page ({quality:.2}): {}", page_url);
+                        continue;
+                    }
+                    if let std::collections::hash_map::Entry::Vacant(e) =
+                        domain_favicons.entry(page_domain)
+                    {
+                        e.insert(doc.favicon_url.clone());
+                    }
+                    docs_to_index.push(doc);
+                }
+
+                let batch_count = docs_to_index.len();
+                if !docs_to_index.is_empty() {
+                    match ranker.index_documents_batch(&docs_to_index) {
+                        Ok(()) => pages_indexed += batch_count,
+                        Err(e) => {
+                            warn!("batch index error: {e}");
                         }
                     }
                 }
             }
+
+            if (pages_crawled / 100) > (pages_before_fill / 100) {
+                let (can_continue, status) = check_storage_limits(
+                    &config.index.data_dir,
+                    &config.embedder.data_dir,
+                    &config.storage,
+                );
+                println!(
+                    "  Crawled {} pages, indexed {} documents | {}",
+                    pages_crawled, pages_indexed, status
+                );
+                if !can_continue {
+                    println!("\nStopping crawl: {}", status);
+                    break;
+                }
+            }
+        }
+
+        if done && buffer.is_empty() {
+            break;
         }
     }
 

@@ -58,7 +58,16 @@ impl Ranker {
         match mode {
             SearchMode::Text => {
                 debug!(query = %query.text, limit = query.limit, "text search");
-                self.index.search(&query.text, query.limit)
+                let raw = self.index.search(&query.text, query.limit * 3)?;
+                let filtered: Vec<SearchResult> = raw
+                    .into_iter()
+                    .filter(|r| {
+                        !fusion::is_junk_candidate(&r.url, &r.title)
+                            && !fusion::is_error_page(&r.title.to_lowercase())
+                    })
+                    .take(query.limit)
+                    .collect();
+                Ok(filtered)
             }
             SearchMode::Semantic => {
                 debug!(query = %query.text, limit = query.limit, "semantic search");
@@ -69,7 +78,16 @@ impl Ranker {
             SearchMode::Hybrid => {
                 if self.embedder.is_fallback() {
                     debug!(query = %query.text, limit = query.limit, "hybrid->text fallback (no model)");
-                    return self.index.search(&query.text, query.limit);
+                    let raw = self.index.search(&query.text, query.limit * 3)?;
+                    let filtered: Vec<SearchResult> = raw
+                        .into_iter()
+                        .filter(|r| {
+                            !fusion::is_junk_candidate(&r.url, &r.title)
+                                && !fusion::is_error_page(&r.title.to_lowercase())
+                        })
+                        .take(query.limit)
+                        .collect();
+                    return Ok(filtered);
                 }
 
                 debug!(query = %query.text, limit = query.limit, "hybrid search");
@@ -143,6 +161,61 @@ impl Ranker {
                 snippet,
             },
         );
+        Ok(())
+    }
+
+    pub fn index_documents_batch(&mut self, docs: &[Document]) -> SlitherResult<()> {
+        let new_docs: Vec<&Document> = docs
+            .iter()
+            .filter(|doc| !self.index.is_indexed(doc.id))
+            .collect();
+
+        if new_docs.is_empty() {
+            return Ok(());
+        }
+
+        for doc in &new_docs {
+            self.index.index_document(doc)?;
+        }
+
+        let embed_texts: Vec<String> = new_docs
+            .iter()
+            .map(|doc| {
+                let mut parts = vec![doc.title.clone()];
+                if let Some(ref desc) = doc.meta_description {
+                    parts.push(desc.clone());
+                }
+                for h in &doc.headings {
+                    parts.push(h.clone());
+                }
+                parts.push(doc.body.chars().take(512).collect());
+                parts.join(" ")
+            })
+            .collect();
+
+        let text_refs: Vec<&str> = embed_texts.iter().map(|s| s.as_str()).collect();
+        let embeddings = self.embedder.embed_batch(&text_refs)?;
+
+        let entries: Vec<(u64, Vec<f32>)> = new_docs
+            .iter()
+            .zip(embeddings.into_iter())
+            .map(|(doc, emb)| (doc.id, emb))
+            .collect();
+
+        self.embedder.store_vectors_batch(&entries)?;
+
+        for doc in &new_docs {
+            let snippet: String = doc.body.chars().take(200).collect();
+            self.doc_metadata.insert(
+                doc.id,
+                RankerDocMeta {
+                    url: doc.url.clone(),
+                    title: doc.title.clone(),
+                    snippet,
+                },
+            );
+        }
+
         Ok(())
     }
 

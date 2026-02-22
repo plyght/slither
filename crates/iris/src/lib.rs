@@ -31,11 +31,18 @@ impl Iris {
     }
 
     pub fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, SlitherError> {
-        texts.iter().map(|t| self.embed_text(t)).collect()
+        self.model.read().embed_batch(texts)
     }
 
     pub fn store_vector(&mut self, doc_id: u64, vector: &[f32]) -> Result<(), SlitherError> {
         self.storage.write().store(doc_id, vector)
+    }
+
+    pub fn store_vectors_batch(
+        &mut self,
+        entries: &[(u64, Vec<f32>)],
+    ) -> Result<(), SlitherError> {
+        self.storage.write().store_batch(entries)
     }
 
     pub fn search(

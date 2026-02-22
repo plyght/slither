@@ -105,13 +105,16 @@ enum Commands {
         init: bool,
     },
 
-    #[command(about = "Discover new seed URLs from Tranco top 1M and Hacker News")]
+    #[command(about = "Discover new seed URLs from Tranco top 1M, Hacker News, and CT logs")]
     Discover {
         #[arg(long, default_value = "200", help = "Max seeds from Tranco list")]
         tranco_limit: usize,
 
         #[arg(long, default_value = "50", help = "Max seeds from HN stories")]
         hn_limit: usize,
+
+        #[arg(long, default_value = "500", help = "Max seeds from CT logs")]
+        ct_limit: usize,
 
         #[arg(long, help = "Auto-add discovered seeds to seeds.json")]
         auto: bool,
@@ -260,6 +263,7 @@ async fn main() {
         Commands::Discover {
             tranco_limit,
             hn_limit,
+            ct_limit,
             auto,
             output_dir,
         } => {
@@ -269,7 +273,7 @@ async fn main() {
                 config.embedder.data_dir = format!("{dir}/vectors");
             }
             let existing = seeds::load_seeds(&config.data_dir);
-            discover::run_discovery(&existing, tranco_limit, hn_limit, auto, &config.data_dir)
+            discover::run_discovery(&existing, tranco_limit, hn_limit, ct_limit, auto, &config.data_dir)
                 .await;
             Ok(())
         }

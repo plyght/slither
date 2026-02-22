@@ -25,10 +25,10 @@ impl Fetcher {
             .gzip(true)
             .brotli(true)
             .redirect(reqwest::redirect::Policy::limited(10))
-            .pool_max_idle_per_host(100)
+            .pool_max_idle_per_host(200)
             .pool_idle_timeout(Duration::from_secs(90))
             .tcp_keepalive(Duration::from_secs(60))
-            .connect_timeout(Duration::from_secs(10))
+            .connect_timeout(Duration::from_secs(5))
             .build()
             .map_err(|e| SlitherError::Crawl(format!("failed to build HTTP client: {}", e)))?;
 

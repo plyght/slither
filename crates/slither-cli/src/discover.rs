@@ -6,6 +6,15 @@ const HN_TOP_STORIES: &str = "https://hacker-news.firebaseio.com/v0/topstories.j
 const HN_BEST_STORIES: &str = "https://hacker-news.firebaseio.com/v0/beststories.json";
 const HN_ITEM_URL: &str = "https://hacker-news.firebaseio.com/v0/item";
 
+const CT_QUERY_URLS: &[&str] = &[
+    "https://crt.sh/?q=%25&output=json&exclude=expired",
+    "https://crt.sh/?q=%25.com&output=json&exclude=expired",
+    "https://crt.sh/?q=%25.org&output=json&exclude=expired",
+    "https://crt.sh/?q=%25.io&output=json&exclude=expired",
+    "https://crt.sh/?q=%25.dev&output=json&exclude=expired",
+    "https://crt.sh/?q=%25.net&output=json&exclude=expired",
+];
+
 const JUNK_TLDS: &[&str] = &[
     ".cn", ".ru", ".su", ".ir", ".kp",
 ];
@@ -324,22 +333,134 @@ pub async fn discover_from_hn(existing: &[Seed], limit: usize) -> Vec<Seed> {
     picked
 }
 
+pub async fn discover_from_ct(existing: &[Seed], limit: usize) -> Vec<Seed> {
+    info!("fetching Certificate Transparency logs from crt.sh...");
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .unwrap_or_default();
+
+    let existing_domains: std::collections::HashSet<String> = existing
+        .iter()
+        .filter_map(|s| {
+            url::Url::parse(s.url()).ok()
+                .and_then(|u| u.host_str().map(|h| h.trim_start_matches("www.").to_string()))
+        })
+        .collect();
+
+    let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(3));
+    let mut handles = Vec::new();
+
+    for &ct_url in CT_QUERY_URLS {
+        let client = client.clone();
+        let sem = semaphore.clone();
+        let url_str = ct_url.to_string();
+        handles.push(tokio::spawn(async move {
+            let _permit = sem.acquire().await.ok()?;
+            let resp = match client.get(&url_str).send().await {
+                Ok(r) if r.status().is_success() => r,
+                Ok(r) => {
+                    warn!("crt.sh query failed with status {} for {}", r.status(), url_str);
+                    return None;
+                }
+                Err(e) => {
+                    warn!("crt.sh request error for {}: {e}", url_str);
+                    return None;
+                }
+            };
+            match resp.json::<serde_json::Value>().await {
+                Ok(json) => Some(json),
+                Err(e) => {
+                    warn!("crt.sh JSON parse error for {}: {e}", url_str);
+                    None
+                }
+            }
+        }));
+    }
+
+    let mut domain_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+
+    for handle in handles {
+        match handle.await {
+            Ok(Some(json)) => {
+                if let Some(arr) = json.as_array() {
+                    for entry in arr {
+                        let mut raw_domains: Vec<String> = Vec::new();
+                        if let Some(name_value) = entry.get("name_value").and_then(|v| v.as_str()) {
+                            for d in name_value.split('\n') {
+                                raw_domains.push(d.trim().to_string());
+                            }
+                        }
+                        if let Some(common_name) = entry.get("common_name").and_then(|v| v.as_str()) {
+                            raw_domains.push(common_name.trim().to_string());
+                        }
+                        for raw in raw_domains {
+                            let domain = raw.trim_start_matches("*.").to_lowercase();
+                            if domain.is_empty() || !domain.contains('.') {
+                                continue;
+                            }
+                            *domain_counts.entry(domain).or_insert(0) += 1;
+                        }
+                    }
+                }
+            }
+            Ok(None) => {}
+            Err(e) => {
+                warn!("crt.sh task join error: {e}");
+            }
+        }
+    }
+
+    let mut candidates: Vec<(String, f64)> = domain_counts
+        .into_iter()
+        .filter(|(domain, _)| !is_junk_domain(domain))
+        .filter(|(domain, _)| !existing_domains.contains(domain))
+        .filter(|(domain, _)| !existing_domains.contains(&format!("www.{domain}")))
+        .map(|(domain, count)| {
+            let score = content_richness_score(&domain) * (count as f64).sqrt();
+            (domain, score)
+        })
+        .collect();
+
+    candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    let picked: Vec<Seed> = candidates
+        .iter()
+        .take(limit)
+        .map(|(domain, _score)| {
+            Seed::Configured(SeedConfig {
+                url: format!("https://{domain}"),
+                depth: 2,
+                priority: SeedPriority::Normal,
+                scope: CrawlScope::SameDomain,
+                sitemap: false,
+            })
+        })
+        .collect();
+
+    info!("CT: {} candidates after filtering, picked top {}", candidates.len(), picked.len());
+    picked
+}
+
 pub async fn run_discovery(
     existing: &[Seed],
     tranco_limit: usize,
     hn_limit: usize,
+    ct_limit: usize,
     auto_add: bool,
     data_dir: &str,
 ) -> Vec<Seed> {
-    let (tranco_seeds, hn_seeds) = tokio::join!(
+    let (tranco_seeds, hn_seeds, ct_seeds) = tokio::join!(
         discover_from_tranco(existing, tranco_limit),
         discover_from_hn(existing, hn_limit),
+        discover_from_ct(existing, ct_limit),
     );
 
     let mut all_new: Vec<Seed> = Vec::new();
     let mut seen_urls: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-    for seed in tranco_seeds.into_iter().chain(hn_seeds.into_iter()) {
+    for seed in tranco_seeds.into_iter().chain(hn_seeds.into_iter()).chain(ct_seeds.into_iter()) {
         let url = seed.url().to_string();
         if seen_urls.insert(url) {
             all_new.push(seed);

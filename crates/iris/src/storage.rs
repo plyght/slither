@@ -290,6 +290,72 @@ impl VectorStorage {
         Ok(())
     }
 
+    pub fn store_batch(&mut self, entries: &[(u64, Vec<f32>)]) -> Result<(), SlitherError> {
+        let new_entries: Vec<&(u64, Vec<f32>)> = entries
+            .iter()
+            .filter(|(id, _)| !self.stored_ids.contains(id))
+            .collect();
+
+        if new_entries.is_empty() {
+            return Ok(());
+        }
+
+        {
+            let mut vf = OpenOptions::new()
+                .write(true)
+                .open(&self.vectors_path)
+                .map_err(|e| SlitherError::Storage(e.to_string()))?;
+
+            let mut data_offset =
+                HEADER_SIZE as u64 + self.vector_count * self.dimensions as u64 * 4;
+            vf.seek(SeekFrom::Start(data_offset))
+                .map_err(|e| SlitherError::Storage(e.to_string()))?;
+
+            for (_, vector) in &new_entries {
+                if vector.len() != self.dimensions {
+                    return Err(SlitherError::Storage(format!(
+                        "vector length {} != configured dimensions {}",
+                        vector.len(),
+                        self.dimensions
+                    )));
+                }
+                for &v in vector.iter() {
+                    vf.write_f32::<LittleEndian>(v)
+                        .map_err(|e| SlitherError::Storage(e.to_string()))?;
+                }
+                data_offset += self.dimensions as u64 * 4;
+            }
+
+            let new_count = self.vector_count + new_entries.len() as u64;
+            vf.seek(SeekFrom::Start(12))
+                .map_err(|e| SlitherError::Storage(e.to_string()))?;
+            vf.write_u64::<LittleEndian>(new_count)
+                .map_err(|e| SlitherError::Storage(e.to_string()))?;
+            vf.flush()
+                .map_err(|e| SlitherError::Storage(e.to_string()))?;
+        }
+
+        {
+            let mut mf = OpenOptions::new()
+                .append(true)
+                .open(&self.vecmap_path)
+                .map_err(|e| SlitherError::Storage(e.to_string()))?;
+            for entry in &new_entries {
+                mf.write_u64::<LittleEndian>(entry.0)
+                    .map_err(|e| SlitherError::Storage(e.to_string()))?;
+            }
+            mf.flush()
+                .map_err(|e| SlitherError::Storage(e.to_string()))?;
+        }
+
+        for entry in &new_entries {
+            self.stored_ids.insert(entry.0);
+        }
+        self.vector_count += new_entries.len() as u64;
+        debug!("stored batch of {} vectors, total={}", new_entries.len(), self.vector_count);
+        Ok(())
+    }
+
     pub fn search(&self, query: &[f32], limit: usize) -> Result<Vec<(u64, f32)>, SlitherError> {
         if limit == 0 {
             return Ok(Vec::new());
